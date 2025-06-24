@@ -620,140 +620,120 @@ class SSPU_Admin_Product_Handler {
      * Process variant metafields
      */
     private function process_variant_metafields($product_id, $variants, $variant_options) {
-        $this->log('Processing variant metafields...');
-        
-        foreach ($variants as $index => $variant) {
-            if (!isset($variant_options[$index])) continue;
-            
-            $variant_data = $variant_options[$index];
-            
-            // Designer data - Upload files to Shopify first
-            if (!empty($variant_data['designer_background_url']) && !empty($variant_data['designer_mask_url'])) {
-                $this->log("Processing design files for variant: " . $variant['id']);
-                
-                // Upload background file to Shopify
-                $background_shopify_url = $this->upload_design_file_to_shopify(
-                    $product_id,
-                    $variant_data['designer_background_url'],
-                    "variant-{$variant['id']}-background"
-                );
-                
-                // Upload mask file to Shopify
-                $mask_shopify_url = $this->upload_design_file_to_shopify(
-                    $product_id,
-                    $variant_data['designer_mask_url'],
-                    "variant-{$variant['id']}-mask"
-                );
-                
-                if ($background_shopify_url && $mask_shopify_url) {
-                    $designer_data = [
-                        'background_image' => $background_shopify_url,
-                        'mask_image' => $mask_shopify_url
-                    ];
-                    
-                    $response = $this->shopify_api->send_request(
-                        "variants/{$variant['id']}/metafields.json",
-                        'POST',
-                        [
-                            'metafield' => [
-                                'namespace' => 'custom',
-                                'key' => 'designer_data',
-                                'value' => json_encode($designer_data),
-                                'type' => 'json'
-                            ]
-                        ]
-                    );
-                    
-                    if (isset($response['metafield'])) {
-                        $this->log("Successfully stored design URLs for variant {$variant['id']}");
-                    } else {
-                        $this->log("ERROR: Failed to store design URLs in metafield");
-                        if (isset($response['errors'])) {
-                            $this->log("Metafield Error: " . json_encode($response['errors']));
-                        }
-                    }
-                } else {
-                    $this->log("ERROR: Failed to upload design files for variant {$variant['id']}");
-                }
-            }
-            
-            // Volume tiers
-            if (!empty($variant_data['tiers']) && is_array($variant_data['tiers'])) {
-                $this->shopify_api->send_request(
+    $this->log('Processing variant metafields...');
+
+    // Keep track of uploaded mask images for cleanup
+    $uploaded_mask_images = [];
+
+    foreach ($variants as $index => $variant) {
+        if (!isset($variant_options[$index])) continue;
+
+        $variant_data = $variant_options[$index];
+
+        // Designer data - Upload files to Shopify Files first
+        if (!empty($variant_data['designer_background_url']) && !empty($variant_data['designer_mask_url'])) {
+            $this->log("Processing design files for variant: " . $variant['id']);
+
+            // Upload background file to Shopify Files
+            $background_shopify_url = $this->upload_design_file_to_shopify(
+                $product_id,
+                $variant_data['designer_background_url'],
+                "variant-{$variant['id']}-background"
+            );
+
+            // Upload mask file to Shopify Files
+            $mask_shopify_url = $this->upload_design_file_to_shopify(
+                $product_id,
+                $variant_data['designer_mask_url'],
+                "variant-{$variant['id']}-mask"
+            );
+
+            if ($background_shopify_url && $mask_shopify_url) {
+                $designer_data = [
+                    'background_image' => $background_shopify_url,
+                    'mask_image' => $mask_shopify_url
+                ];
+
+                $response = $this->shopify_api->send_request(
                     "variants/{$variant['id']}/metafields.json",
                     'POST',
                     [
                         'metafield' => [
                             'namespace' => 'custom',
-                            'key' => 'volume_tiers',
-                            'value' => json_encode($variant_data['tiers']),
+                            'key' => 'designer_data',
+                            'value' => json_encode($designer_data),
                             'type' => 'json'
                         ]
                     ]
                 );
+
+                if (isset($response['metafield'])) {
+                    $this->log("Successfully stored design URLs for variant {$variant['id']}");
+                } else {
+                    $this->log("ERROR: Failed to store design URLs in metafield");
+                    if (isset($response['errors'])) {
+                        $this->log("Metafield Error: " . json_encode($response['errors']));
+                    }
+                }
+            } else {
+                $this->log("ERROR: Failed to upload design files for variant {$variant['id']}");
             }
         }
+
+        // Volume tiers
+        if (!empty($variant_data['tiers']) && is_array($variant_data['tiers'])) {
+            $this->shopify_api->send_request(
+                "variants/{$variant['id']}/metafields.json",
+                'POST',
+                [
+                    'metafield' => [
+                        'namespace' => 'custom',
+                        'key' => 'volume_tiers',
+                        'value' => json_encode($variant_data['tiers']),
+                        'type' => 'json'
+                    ]
+                ]
+            );
+        }
     }
-    
+}
+
     /**
      * Upload design file to Shopify
      */
-    private function upload_design_file_to_shopify($product_id, $local_url, $alt_text = '') {
-        // Convert URL to file path
-        $upload_dir = wp_upload_dir();
-        $file_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $local_url);
-        
-        if (!file_exists($file_path)) {
-            $this->log("ERROR: Design file not found: $file_path");
-            return false;
-        }
-        
-        // Check if file is readable
-        if (!is_readable($file_path)) {
-            $this->log("ERROR: File is not readable: $file_path");
-            $this->log("File permissions: " . decoct(fileperms($file_path) & 0777));
-            return false;
-        }
-        
-        // Check file size
-        $file_size = filesize($file_path);
-        $this->log("File size: " . $file_size . " bytes (" . round($file_size / 1024 / 1024, 2) . " MB)");
-        
-        $max_size = 20 * 1024 * 1024; // 20MB Shopify limit
-        if ($file_size > $max_size) {
-            $this->log("ERROR: File too large for Shopify API: " . round($file_size / 1024 / 1024, 2) . " MB");
-            return false;
-        }
-        
-        // Read file contents
-        $image_data = file_get_contents($file_path);
-        if ($image_data === false) {
-            $this->log("ERROR: Could not read design file: $file_path");
-            return false;
-        }
-        
-        // Upload to Shopify
-        $response = $this->shopify_api->send_request(
-            "products/{$product_id}/images.json",
-            'POST',
-            [
-                'image' => [
-                    'attachment' => base64_encode($image_data),
-                    'filename' => basename($file_path),
-                    'alt' => $alt_text
-                ]
-            ]
-        );
-        
-        if (isset($response['image']['src'])) {
-            $this->log("Successfully uploaded design file: " . $response['image']['src']);
-            return $response['image']['src'];
-        } else {
-            $this->log("ERROR: Failed to upload design file to Shopify");
-            $this->debug_shopify_response($response, "Design File Upload");
-            return false;
-        }
+    /**
+ * Upload design file to Shopify using the correct GraphQL API flow.
+ */
+private function upload_design_file_to_shopify($product_id, $local_url, $alt_text = '') {
+    $this->log("Uploading design file to Shopify Files CDN: {$local_url}");
+
+    if (empty($local_url)) {
+        $this->log("ERROR: Local URL for design file is empty.");
+        return false;
     }
+
+    // The shopify_api property should already be initialized in the constructor.
+    // If not, you might need to add `$this->shopify_api = new SSPU_Shopify_API();`
+    // in the constructor of SSPU_Admin_Product_Handler.
+
+    // Get the filename from the URL to pass to the API
+    $filename = basename(parse_url($local_url, PHP_URL_PATH));
+
+    // Use the correct API method that uploads to Shopify Files
+    $shopify_cdn_url = $this->shopify_api->upload_file_from_url($local_url, $filename);
+
+    if ($shopify_cdn_url) {
+        $this->log("Successfully uploaded design file. Shopify URL: " . $shopify_cdn_url);
+        return $shopify_cdn_url;
+    } else {
+        $this->log("ERROR: Failed to upload design file using upload_file_from_url(). URL: " . $local_url);
+        // Add specific error from the API call if available
+        if (property_exists($this->shopify_api, 'last_error') && !empty($this->shopify_api->last_error)) {
+             $this->log("Shopify API Error: " . $this->shopify_api->last_error);
+        }
+        return false;
+    }
+}
     
     /**
      * Debug Shopify API response

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Shopify Product Uploader
  * Description:       Allows staff to upload products to a Shopify store directly from the WordPress dashboard with AI-powered image editing.
- * Version:           2.0.3
+ * Version:           2.1.5
  * Author:            Your Name
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,10 +17,12 @@ if ( ! defined( 'WPINC' ) ) {
 // Define constants for easy access to paths and URLs
 define( 'SSPU_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SSPU_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'SSPU_VERSION', '2.0.3' );
+define( 'SSPU_VERSION', '2.1.5' );
 
 // Include our class files
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-roles.php';
+// FIX: Add the missing require_once for the Shopify API class here
+require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-shopify-api.php';
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-admin.php';
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-openai.php';
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-drafts.php';
@@ -107,7 +109,8 @@ function sspu_run_plugin() {
     new SSPU_Image_Templates();
     
     // Initialize the enhanced AI Image Editor
-    $GLOBALS['sspu_ai_editor'] = new SSPU_AI_Image_Editor();
+    $GLOBALS['sspu_ai_editor'] = SSPU_AI_Image_Editor::get_instance();
+
     
     // Initialize the SKU generator singleton
     SSPU_SKU_Generator::getInstance();
@@ -224,8 +227,9 @@ function sspu_render_ai_settings_content() {
     $anthropic_key = get_option('sspu_anthropic_api_key', '');
     
     // Test connections
-    $ai_editor = new SSPU_AI_Image_Editor();
-    $connections = $ai_editor->test_connections();
+    // Test connections
+$ai_editor = SSPU_AI_Image_Editor::get_instance();
+$connections = $ai_editor->test_connections();
     ?>
     <h2>AI Image Editor Settings</h2>
     

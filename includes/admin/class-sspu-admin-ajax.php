@@ -1613,165 +1613,177 @@ Rules:
     /**
      * Create masked image handler
      */
-    public function handle_create_masked_image()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+    public function handle_create_masked_image() {
+    check_ajax_referer('sspu_ajax_nonce', 'nonce');
 
-        if (!current_user_can('upload_shopify_products')) {
-            wp_send_json_error(['message' => 'Permission denied']);
+    if (!current_user_can('upload_shopify_products')) {
+        wp_send_json_error(['message' => 'Permission denied']);
+        return;
+    }
+
+    $image_id = absint($_POST['image_id']);
+    $mask_coordinates = $_POST['mask_coordinates'];
+
+    if (!$image_id || !is_array($mask_coordinates) || empty($mask_coordinates)) {
+        wp_send_json_error(['message' => 'Missing required parameters or invalid mask coordinates.']);
+        return;
+    }
+
+    // Sanitize coordinates explicitly
+    $crop_x = intval($mask_coordinates['x'] ?? 0);
+    $crop_y = intval($mask_coordinates['y'] ?? 0);
+    $crop_width = intval($mask_coordinates['width'] ?? 0);
+    $crop_height = intval($mask_coordinates['height'] ?? 0);
+
+    $image_path = get_attached_file($image_id);
+    if (!$image_path || !file_exists($image_path)) {
+        wp_send_json_error(['message' => 'Image file not found on server.']);
+        return;
+    }
+
+    $image_info = getimagesize($image_path);
+    if (!$image_info) {
+        wp_send_json_error(['message' => 'Invalid image file or unable to get image dimensions.']);
+        return;
+    }
+
+    $mime_type = $image_info['mime'];
+    $width = $image_info[0];
+    $height = $image_info[1];
+
+    // Create image resource from source image
+    $source_image = null;
+    switch ($mime_type) {
+        case 'image/jpeg':
+            $source_image = imagecreatefromjpeg($image_path);
+            break;
+        case 'image/png':
+            $source_image = imagecreatefrompng($image_path);
+            break;
+        case 'image/gif':
+            $source_image = imagecreatefromgif($image_path);
+            break;
+        case 'image/webp':
+            if (function_exists('imagecreatefromwebp')) {
+                $source_image = imagecreatefromwebp($image_path);
+            }
+            break;
+        default:
+            wp_send_json_error(['message' => 'Unsupported image type: ' . $mime_type]);
             return;
-        }
+    }
 
-        $image_id = absint($_POST['image_id']);
-        $mask_coordinates = $_POST['mask_coordinates']; // Needs sanitization if values are not numeric
+    if (!$source_image) {
+        wp_send_json_error(['message' => 'Failed to create image resource from original file.']);
+        return;
+    }
 
-        if (!$image_id || !is_array($mask_coordinates) || empty($mask_coordinates)) {
-            wp_send_json_error(['message' => 'Missing required parameters or invalid mask coordinates.']);
-            return;
-        }
+    // Adjust crop coordinates to stay within image bounds
+    $crop_x = max(0, $crop_x);
+    $crop_y = max(0, $crop_y);
+    $crop_width = min($crop_width, $width - $crop_x);
+    $crop_height = min($crop_height, $height - $crop_y);
 
-        // Sanitize coordinates explicitly
-        $crop_x = intval($mask_coordinates['x'] ?? 0);
-        $crop_y = intval($mask_coordinates['y'] ?? 0);
-        $crop_width = intval($mask_coordinates['width'] ?? 0);
-        $crop_height = intval($mask_coordinates['height'] ?? 0);
+    if ($crop_width <= 0 || $crop_height <= 0) {
+        imagedestroy($source_image);
+        wp_send_json_error(['message' => 'Invalid crop area dimensions.']);
+        return;
+    }
 
-        $image_path = get_attached_file($image_id);
-        if (!$image_path || !file_exists($image_path)) {
-            wp_send_json_error(['message' => 'Image file not found on server.']);
-            return;
-        }
+    // Create background image (full image)
+    $background_image = imagecreatetruecolor($width, $height);
+    imagecopy($background_image, $source_image, 0, 0, 0, 0, $width, $height);
 
-        $image_info = getimagesize($image_path);
-        if (!$image_info) {
-            wp_send_json_error(['message' => 'Invalid image file or unable to get image dimensions.']);
-            return;
-        }
+    // Create mask image (original image with cropped area transparent)
+    $mask_image = imagecreatetruecolor($width, $height);
+    imagealphablending($mask_image, false);
+    imagesavealpha($mask_image, true);
 
-        $mime_type = $image_info['mime'];
-        $width = $image_info[0];
-        $height = $image_info[1];
+    imagecopy($mask_image, $source_image, 0, 0, 0, 0, $width, $height);
 
-        // Create image resource from source image
-        $source_image = null;
-        switch ($mime_type) {
-            case 'image/jpeg':
-                $source_image = imagecreatefromjpeg($image_path);
-                break;
-            case 'image/png':
-                $source_image = imagecreatefrompng($image_path);
-                break;
-            case 'image/gif':
-                $source_image = imagecreatefromgif($image_path);
-                break;
-            case 'image/webp':
-                // Check if webp functions are available
-                if (function_exists('imagecreatefromwebp')) {
-                    $source_image = imagecreatefromwebp($image_path);
-                }
-                break;
-            default:
-                wp_send_json_error(['message' => 'Unsupported image type: ' . $mime_type]);
-                return;
-        }
+    // Make the cropped area transparent in the mask image
+    $transparent = imagecolorallocatealpha($mask_image, 0, 0, 0, 127);
+    imagefilledrectangle($mask_image, $crop_x, $crop_y,
+        $crop_x + $crop_width,
+        $crop_y + $crop_height,
+        $transparent);
 
-        if (!$source_image) {
-            wp_send_json_error(['message' => 'Failed to create image resource from original file.']);
-            return;
-        }
+    $upload_dir = wp_upload_dir();
+    $base_name = pathinfo($image_path, PATHINFO_FILENAME);
+    $timestamp = time();
 
-        // Adjust crop coordinates to stay within image bounds
-        $crop_x = max(0, $crop_x);
-        $crop_y = max(0, $crop_y);
-        $crop_width = min($crop_width, $width - $crop_x);
-        $crop_height = min($crop_height, $height - $crop_y);
+    $background_filename = $base_name . '_background_' . $timestamp . '.png';
+    $background_path = $upload_dir['path'] . '/' . $background_filename;
 
-        if ($crop_width <= 0 || $crop_height <= 0) {
-            imagedestroy($source_image);
-            wp_send_json_error(['message' => 'Invalid crop area dimensions.']);
-            return;
-        }
-
-        // Create background image (full image)
-        $background_image = imagecreatetruecolor($width, $height);
-        imagecopy($background_image, $source_image, 0, 0, 0, 0, $width, $height);
-
-        // Create mask image (original image with cropped area transparent)
-        $mask_image = imagecreatetruecolor($width, $height);
-        imagealphablending($mask_image, false); // Disable blending for proper alpha handling
-        imagesavealpha($mask_image, true); // Save full alpha channel
-
-        imagecopy($mask_image, $source_image, 0, 0, 0, 0, $width, $height);
-
-        // Make the cropped area transparent in the mask image
-        $transparent = imagecolorallocatealpha($mask_image, 0, 0, 0, 127); // 127 is full transparency
-        imagefilledrectangle($mask_image, $crop_x, $crop_y,
-            $crop_x + $crop_width, // Corrected to use crop_width/height directly
-            $crop_y + $crop_height,
-            $transparent);
-
-        $upload_dir = wp_upload_dir();
-        $base_name = pathinfo($image_path, PATHINFO_FILENAME);
-        $timestamp = time(); // Use current timestamp for unique filenames
-
-        $background_filename = $base_name . '_background_' . $timestamp . '.png';
-        $background_path = $upload_dir['path'] . '/' . $background_filename;
-        // Check if directory exists and is writable
-        if (!wp_mkdir_p($upload_dir['path'])) {
-            imagedestroy($source_image);
-            imagedestroy($background_image);
-            imagedestroy($mask_image);
-            wp_send_json_error(['message' => 'Unable to create upload directory.']);
-            return;
-        }
-        imagepng($background_image, $background_path, 9); // Quality 9 for PNG
-
-        $mask_filename = $base_name . '_mask_' . $timestamp . '.png';
-        $mask_path = $upload_dir['path'] . '/' . $mask_filename;
-        imagepng($mask_image, $mask_path, 9);
-
-        // Destroy image resources to free up memory
+    if (!wp_mkdir_p($upload_dir['path'])) {
         imagedestroy($source_image);
         imagedestroy($background_image);
         imagedestroy($mask_image);
+        wp_send_json_error(['message' => 'Unable to create upload directory.']);
+        return;
+    }
 
-        // Create WordPress attachments for the new images
-        $background_attachment_id = $this->create_attachment($background_path, $background_filename, 'Design Tool Background - ' . $base_name);
-        $mask_attachment_id = $this->create_attachment($mask_path, $mask_filename, 'Design Tool Mask - ' . $base_name);
+    imagepng($background_image, $background_path, 9);
 
-        if (!$background_attachment_id || !$mask_attachment_id) {
-            // Clean up files if attachment creation fails
-            @unlink($background_path);
-            @unlink($mask_path);
-            wp_send_json_error(['message' => 'Failed to create WordPress attachments for generated images.']);
-            return;
-        }
+    $mask_filename = $base_name . '_mask_' . $timestamp . '.png';
+    $mask_path = $upload_dir['path'] . '/' . $mask_filename;
+    imagepng($mask_image, $mask_path, 9);
 
-        $background_url = wp_get_attachment_url($background_attachment_id);
-        $mask_url = wp_get_attachment_url($mask_attachment_id);
+    // Destroy image resources to free up memory
+    imagedestroy($source_image);
+    imagedestroy($background_image);
+    imagedestroy($mask_image);
 
-        if (class_exists('SSPU_Analytics')) {
-            $analytics = new SSPU_Analytics();
-            $analytics->log_activity(get_current_user_id(), 'design_files_created', [
-                'original_image_id' => $image_id,
-                'background_id' => $background_attachment_id,
-                'mask_id' => $mask_attachment_id,
-                'crop_area' => $mask_coordinates
-            ]);
-        }
+    // Create WordPress attachments for the new images
+    $background_attachment_id = $this->create_attachment($background_path, $background_filename, 'Design Tool Background - ' . $base_name);
 
-        wp_send_json_success([
-            'background_url' => $background_url,
-            'mask_url' => $mask_url,
+    // For mask images, we'll upload to Shopify Files instead of creating WordPress attachments
+    $background_url = wp_get_attachment_url($background_attachment_id);
+    $mask_url_local = $upload_dir['url'] . '/' . $mask_filename;
+
+    // Upload mask to Shopify Files instead of product gallery
+    if (!class_exists('SSPU_Shopify_API')) {
+        wp_send_json_error(['message' => 'Shopify API class not found.']);
+        return;
+    }
+
+    $shopify_api = new SSPU_Shopify_API();
+    $mask_shopify_url = $shopify_api->upload_file_from_url($mask_url_local, $mask_filename);
+
+    if (!$background_attachment_id) {
+        @unlink($background_path);
+        @unlink($mask_path);
+        wp_send_json_error(['message' => 'Failed to create background attachment.']);
+        return;
+    }
+
+    if (!$mask_shopify_url) {
+        @unlink($mask_path);
+        wp_send_json_error(['message' => 'Failed to upload mask to Shopify Files.']);
+        return;
+    }
+
+    // Clean up local mask file after successful upload
+    @unlink($mask_path);
+
+    if (class_exists('SSPU_Analytics')) {
+        $analytics = new SSPU_Analytics();
+        $analytics->log_activity(get_current_user_id(), 'design_files_created', [
+            'original_image_id' => $image_id,
             'background_id' => $background_attachment_id,
-            'mask_id' => $mask_attachment_id,
-            'message' => 'Design files created successfully'
+            'mask_uploaded_to_shopify' => true,
+            'crop_area' => $mask_coordinates
         ]);
     }
 
-    /**
-     * Live Product Editor Handlers
-     */
+    wp_send_json_success([
+        'background_url' => $background_url,
+        'mask_url' => $mask_shopify_url, // This is now the Shopify Files URL
+        'background_id' => $background_attachment_id,
+        'mask_id' => null, // No WordPress attachment for mask
+        'message' => 'Design files created successfully (mask uploaded to Shopify Files)'
+    ]);
+}
 
     /**
      * Handle product search for live editor with advanced filters

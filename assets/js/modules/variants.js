@@ -13,14 +13,14 @@
     this.bindEvents();
     this.initSortable();
     this.addMimicStyles();
-    
+
     // Ensure detect all colors button is properly bound
     if ($('#detect-all-colors-btn').length === 0) {
         console.error('SSPU Variants: Detect All Colors button not found in DOM');
     } else {
         console.log('SSPU Variants: Detect All Colors button found and ready');
     }
-    
+
     APP.utils.log('Variants module initialized');
 },
 
@@ -465,26 +465,26 @@
         getTierData: function($row) {
             console.log('[SSPU Variants] === GET TIER DATA START ===');
             console.log('[SSPU Variants] Row provided:', $row.length > 0);
-            
+
             const tiers = [];
             const $tierRows = $row.find('.volume-tier-row');
             console.log('[SSPU Variants] Found tier rows:', $tierRows.length);
-            
+
             $tierRows.each(function(index) {
                 console.log(`[SSPU Variants] Processing tier row ${index}`);
-                
+
                 const $tierRow = $(this);
                 console.log('[SSPU Variants] Tier row element:', $tierRow[0]);
-                
+
                 const $minQtyInput = $tierRow.find('input[name*="[min_quantity]"]');
                 const $priceInput = $tierRow.find('input[name*="[price]"]');
-                
+
                 console.log(`[SSPU Variants] Tier ${index} - Min qty input found:`, $minQtyInput.length > 0);
                 console.log(`[SSPU Variants] Tier ${index} - Price input found:`, $priceInput.length > 0);
-                
+
                 const min_quantity = $minQtyInput.val();
                 const price = $priceInput.val();
-                
+
                 console.log(`[SSPU Variants] Tier ${index} - Min qty value: "${min_quantity}"`);
                 console.log(`[SSPU Variants] Tier ${index} - Price value: "${price}"`);
 
@@ -499,11 +499,11 @@
                     console.warn(`[SSPU Variants] Tier ${index} - Skipping due to missing data`);
                 }
             });
-            
+
             console.log('[SSPU Variants] Total valid tiers collected:', tiers.length);
             console.log('[SSPU Variants] Tier data:', tiers);
             console.log('[SSPU Variants] === GET TIER DATA END ===');
-            
+
             return tiers;
         },
 
@@ -513,41 +513,41 @@
          */
         addVolumeTier: function($button) {
             console.log('[SSPU Variants] === ADD VOLUME TIER START ===');
-            
+
             const $row = $button.closest('.sspu-variant-row');
             console.log('[SSPU Variants] Row found:', $row.length > 0);
-            
+
             const $tiersBody = $row.find('.volume-tiers-body');
             console.log('[SSPU Variants] Tiers body found:', $tiersBody.length > 0);
             console.log('[SSPU Variants] Tiers body element:', $tiersBody[0]);
-            
+
             const variantIndex = $row.index();
             const tierIndex = $tiersBody.find('.volume-tier-row').length;
             console.log('[SSPU Variants] Variant index:', variantIndex);
             console.log('[SSPU Variants] New tier index:', tierIndex);
-            
+
             const $tierTemplate = $('#sspu-tier-template');
             console.log('[SSPU Variants] Tier template found:', $tierTemplate.length > 0);
-            
+
             if ($tierTemplate.length === 0) {
                 console.error('[SSPU Variants] ERROR: Tier template not found!');
                 APP.utils.notify('Error: Tier template not found. Please refresh the page.', 'error');
                 return;
             }
-            
+
             const templateHtml = $tierTemplate.html();
             console.log('[SSPU Variants] Template HTML:', templateHtml);
-            
+
             const tierHtml = templateHtml
                 .replace(/variant_options\[0\]/g, `variant_options[${variantIndex}]`)
                 .replace(/\[tiers\]\[0\]/g, `[tiers][${tierIndex}]`);
-            
+
             console.log('[SSPU Variants] Processed tier HTML:', tierHtml);
-            
+
             // Parse and append properly
             const $newTier = $($.parseHTML(tierHtml.trim()));
             $tiersBody.append($newTier);
-            
+
             const newTierCount = $tiersBody.find('.volume-tier-row').length;
             console.log('[SSPU Variants] New tier count after append:', newTierCount);
             console.log('[SSPU Variants] === ADD VOLUME TIER END ===');
@@ -559,16 +559,16 @@
          */
         autoCalculateVolumeTiers: function($button) {
             console.log('[SSPU Variants] === AUTO-CALCULATE VOLUME TIERS START ===');
-            
+
             const $row = $button.closest('.sspu-variant-row');
             console.log('[SSPU Variants] Row found:', $row.length > 0);
             console.log('[SSPU Variants] Row index:', $row.index());
             console.log('[SSPU Variants] Row HTML:', $row[0]);
-            
+
             const $priceInput = $row.find('.sspu-variant-price');
             console.log('[SSPU Variants] Price input found:', $priceInput.length > 0);
             console.log('[SSPU Variants] Price input value:', $priceInput.val());
-            
+
             const basePrice = parseFloat($priceInput.val());
             console.log('[SSPU Variants] Parsed base price:', basePrice);
 
@@ -586,15 +586,15 @@
                 })
                 .done(response => {
                     console.log('[SSPU Variants] AJAX Response received:', response);
-                    
+
                     if (response.success) {
                         console.log('[SSPU Variants] Response successful, tiers data:', response.data.tiers);
-                        
+
                         const $tiersBody = $row.find('.volume-tiers-body');
                         console.log('[SSPU Variants] Tiers body found:', $tiersBody.length > 0);
                         console.log('[SSPU Variants] Tiers body element:', $tiersBody[0]);
                         console.log('[SSPU Variants] Current tiers body content before empty:', $tiersBody.html());
-                        
+
                         $tiersBody.empty();
                         console.log('[SSPU Variants] Tiers body cleared');
 
@@ -611,23 +611,23 @@
 
                         response.data.tiers.forEach((tier, index) => {
                             console.log(`[SSPU Variants] Processing tier ${index}:`, tier);
-                            
+
                             const variantIndex = $row.index();
                             console.log(`[SSPU Variants] Variant index: ${variantIndex}, Tier index: ${index}`);
-                            
+
                             const templateHtml = $tierTemplate.html();
                             console.log('[SSPU Variants] Template HTML before replacement:', templateHtml);
-                            
+
                             const tierHtml = templateHtml
                                 .replace(/variant_options\[0\]/g, `variant_options[${variantIndex}]`)
                                 .replace(/\[tiers\]\[0\]/g, `[tiers][${index}]`);
-                            
+
                             console.log('[SSPU Variants] Tier HTML after replacement:', tierHtml);
 
                             // Parse as HTML properly
                             const $tierRow = $($.parseHTML(tierHtml.trim()));
                             console.log('[SSPU Variants] Created tier row jQuery object:', $tierRow.length > 0);
-                            
+
                             // Find and set min quantity - use more flexible selectors
                             const $minQtyInput = $tierRow.find('input[class*="tier-min-quantity"], input[name*="min_quantity"]').first();
                             console.log('[SSPU Variants] Min quantity input found:', $minQtyInput.length > 0);
@@ -638,7 +638,7 @@
                                 console.error('[SSPU Variants] ERROR: Could not find min quantity input!');
                                 console.error('[SSPU Variants] Tier row HTML:', $tierRow.html());
                             }
-                            
+
                             // Find and set price - use more flexible selectors
                             const $priceInput = $tierRow.find('input[class*="tier-price"], input[name*="[price]"]').first();
                             console.log('[SSPU Variants] Price input found:', $priceInput.length > 0);
@@ -648,11 +648,11 @@
                             } else {
                                 console.error('[SSPU Variants] ERROR: Could not find price input!');
                             }
-                            
+
                             // Append to tiers body
                             console.log('[SSPU Variants] Appending tier row to body...');
                             $tiersBody.append($tierRow);
-                            
+
                             // Verify it was added
                             const addedRows = $tiersBody.find('.volume-tier-row').length;
                             console.log(`[SSPU Variants] Total tier rows after append: ${addedRows}`);
@@ -662,7 +662,7 @@
                         const finalTierCount = $tiersBody.find('.volume-tier-row').length;
                         console.log('[SSPU Variants] Final tier count:', finalTierCount);
                         console.log('[SSPU Variants] Final tiers body HTML:', $tiersBody.html());
-                        
+
                         if (finalTierCount === 0) {
                             console.error('[SSPU Variants] ERROR: No tier rows were added despite successful processing!');
                             console.error('[SSPU Variants] Tiers body parent:', $tiersBody.parent());
@@ -700,7 +700,7 @@
                 APP.utils.notify('First variant must have a price to apply to all.', 'warning');
                 return;
             }
-            
+
             $('.sspu-variant-price').val(firstPrice).addClass('updated-field');
             APP.utils.notify(`Applied price $${firstPrice} to all variants.`, 'success');
             setTimeout(() => $('.updated-field').removeClass('updated-field'), 1000);
@@ -711,99 +711,99 @@
          */
         applyTiersToAll: function() {
             console.log('[SSPU Variants] === APPLY TIERS TO ALL START ===');
-            
+
             const $firstRow = $('.sspu-variant-row:first');
             console.log('[SSPU Variants] First row found:', $firstRow.length > 0);
-            
+
             const firstTiers = this.getTierData($firstRow);
             console.log('[SSPU Variants] First variant tiers:', firstTiers);
             console.log('[SSPU Variants] Number of tiers to copy:', firstTiers.length);
-            
+
             if (firstTiers.length === 0) {
                 console.warn('[SSPU Variants] No tiers found in first variant');
                 APP.utils.notify('First variant must have volume tiers to apply to all.', 'warning');
                 return;
             }
-            
+
             const $allRows = $('.sspu-variant-row');
             console.log('[SSPU Variants] Total variant rows:', $allRows.length);
-            
+
             // Check if tier template exists
             const $tierTemplate = $('#sspu-tier-template');
             console.log('[SSPU Variants] Tier template found:', $tierTemplate.length > 0);
-            
+
             if ($tierTemplate.length === 0) {
                 console.error('[SSPU Variants] ERROR: Tier template not found!');
                 APP.utils.notify('Error: Tier template not found. Please refresh the page.', 'error');
                 return;
             }
-            
+
             let successCount = 0;
             let errorCount = 0;
-            
+
             $allRows.each((index, element) => {
                 if (index === 0) {
                     console.log('[SSPU Variants] Skipping first row (source)');
                     return; // Skip first row
                 }
-                
+
                 console.log(`[SSPU Variants] Processing variant row ${index}`);
-                
+
                 const $row = $(element);
                 const $tiersBody = $row.find('.volume-tiers-body');
                 console.log(`[SSPU Variants] Row ${index} - Tiers body found:`, $tiersBody.length > 0);
-                
+
                 if ($tiersBody.length === 0) {
                     console.error(`[SSPU Variants] ERROR: No tiers body found for row ${index}`);
                     errorCount++;
                     return;
                 }
-                
+
                 // Clear existing tiers
                 const existingTiers = $tiersBody.find('.volume-tier-row').length;
                 console.log(`[SSPU Variants] Row ${index} - Existing tiers: ${existingTiers}`);
                 $tiersBody.empty();
                 console.log(`[SSPU Variants] Row ${index} - Cleared existing tiers`);
-                
+
                 // Add new tiers
                 firstTiers.forEach((tier, tierIndex) => {
                     console.log(`[SSPU Variants] Row ${index} - Adding tier ${tierIndex}:`, tier);
-                    
+
                     const variantIndex = $row.index();
                     const templateHtml = $tierTemplate.html();
-                    
+
                     const tierHtml = templateHtml
                         .replace(/variant_options\[0\]/g, `variant_options[${variantIndex}]`)
                         .replace(/\[tiers\]\[0\]/g, `[tiers][${tierIndex}]`);
-                    
+
                     // Parse as HTML properly
                     const $tierRow = $($.parseHTML(tierHtml.trim()));
-                    
+
                     // Set values with flexible selectors
                     const $minQtyInput = $tierRow.find('input[class*="tier-min-quantity"], input[name*="min_quantity"]').first();
                     const $priceInput = $tierRow.find('input[class*="tier-price"], input[name*="[price]"]').first();
-                    
+
                     if ($minQtyInput.length > 0) {
                         $minQtyInput.val(tier.min_quantity);
                         console.log(`[SSPU Variants] Row ${index}, Tier ${tierIndex} - Set min qty: ${tier.min_quantity}`);
                     } else {
                         console.error(`[SSPU Variants] ERROR: Row ${index}, Tier ${tierIndex} - No min qty input found`);
                     }
-                    
+
                     if ($priceInput.length > 0) {
                         $priceInput.val(tier.price);
                         console.log(`[SSPU Variants] Row ${index}, Tier ${tierIndex} - Set price: ${tier.price}`);
                     } else {
                         console.error(`[SSPU Variants] ERROR: Row ${index}, Tier ${tierIndex} - No price input found`);
                     }
-                    
+
                     $tiersBody.append($tierRow);
                 });
-                
+
                 // Verify tiers were added
                 const finalTierCount = $tiersBody.find('.volume-tier-row').length;
                 console.log(`[SSPU Variants] Row ${index} - Final tier count: ${finalTierCount}`);
-                
+
                 if (finalTierCount === firstTiers.length) {
                     successCount++;
                     console.log(`[SSPU Variants] Row ${index} - SUCCESS`);
@@ -812,12 +812,12 @@
                     console.error(`[SSPU Variants] Row ${index} - ERROR: Expected ${firstTiers.length} tiers, got ${finalTierCount}`);
                 }
             });
-            
+
             console.log('[SSPU Variants] === APPLY TIERS TO ALL SUMMARY ===');
             console.log(`[SSPU Variants] Successfully updated: ${successCount} variants`);
             console.log(`[SSPU Variants] Errors: ${errorCount} variants`);
             console.log('[SSPU Variants] === APPLY TIERS TO ALL END ===');
-            
+
             APP.utils.notify(`Applied ${firstTiers.length} volume tiers to ${successCount} variants.`, 'success');
         },
 
@@ -830,7 +830,7 @@
                 APP.utils.notify('First variant must have a weight to apply to all.', 'warning');
                 return;
             }
-            
+
             $('.sspu-variant-weight').val(firstWeight).addClass('updated-field');
             APP.utils.notify(`Applied weight ${firstWeight} lbs to all variants.`, 'success');
             setTimeout(() => $('.updated-field').removeClass('updated-field'), 1000);
@@ -841,20 +841,20 @@
          */
         autoGenerateAllSKUs: function() {
             const productName = $('#product-name-input').val();
-            
+
             if (!productName) {
                 APP.utils.notify('Please enter a product name first.', 'warning');
                 return;
             }
-            
+
             let skuCount = 0;
-            
+
             $('.sspu-variant-row').each(function() {
                 const $row = $(this);
                 const variantName = $row.find('.sspu-variant-option-name').val();
                 const variantValue = $row.find('.sspu-variant-option-value').val();
                 const $skuField = $row.find('.sspu-variant-sku');
-                
+
                 if (variantValue && !$skuField.val()) {
                     APP.utils.ajax('generate_sku', {
                         product_name: productName,
@@ -868,7 +868,7 @@
                     });
                 }
             });
-            
+
             setTimeout(() => {
                 $('.updated-field').removeClass('updated-field');
                 APP.utils.notify(`Generated ${skuCount} SKUs.`, 'success');
@@ -896,29 +896,29 @@
                 price: price
             });
             console.log('[SSPU Variants] Variant row provided:', $variantRow.length > 0);
-            
+
             const $tiersBody = $variantRow.find('.volume-tiers-body');
             console.log('[SSPU Variants] Tiers body found:', $tiersBody.length > 0);
-            
+
             if ($tiersBody.length === 0) {
                 console.error('[SSPU Variants] ERROR: No tiers body found in variant row!');
                 console.error('[SSPU Variants] Variant row structure:', $variantRow.html());
                 return;
             }
-            
+
             const variantIndex = $variantRow.index();
             const tierIndex = $tiersBody.find('.volume-tier-row').length;
             console.log('[SSPU Variants] Variant index:', variantIndex);
             console.log('[SSPU Variants] New tier will be at index:', tierIndex);
-            
+
             const $tierTemplate = $('#sspu-tier-template');
             console.log('[SSPU Variants] Tier template found:', $tierTemplate.length > 0);
-            
+
             if ($tierTemplate.length === 0) {
                 console.error('[SSPU Variants] ERROR: Tier template not found!');
                 return;
             }
-            
+
             const templateHtml = $tierTemplate.html();
             const tierHtml = templateHtml
                 .replace(/variant_options\[0\]/g, `variant_options[${variantIndex}]`)
@@ -927,14 +927,14 @@
             // Parse as HTML properly
             const $tierRow = $($.parseHTML(tierHtml.trim()));
             console.log('[SSPU Variants] Created tier row:', $tierRow.length > 0);
-            
+
             // Set values with flexible selectors
             const $minQtyInput = $tierRow.find('input[class*="tier-min-quantity"], input[name*="min_quantity"]').first();
             const $priceInput = $tierRow.find('input[class*="tier-price"], input[name*="[price]"]').first();
-            
+
             console.log('[SSPU Variants] Min qty input found:', $minQtyInput.length > 0);
             console.log('[SSPU Variants] Price input found:', $priceInput.length > 0);
-            
+
             if ($minQtyInput.length > 0) {
                 $minQtyInput.val(minQuantity);
                 console.log('[SSPU Variants] Set min quantity to:', minQuantity);
@@ -942,16 +942,16 @@
                 console.error('[SSPU Variants] ERROR: Could not find min quantity input!');
                 console.error('[SSPU Variants] Tier row HTML:', $tierRow.html());
             }
-            
+
             if ($priceInput.length > 0) {
                 $priceInput.val(price);
                 console.log('[SSPU Variants] Set price to:', price);
             } else {
                 console.error('[SSPU Variants] ERROR: Could not find price input!');
             }
-            
+
             $tiersBody.append($tierRow);
-            
+
             const finalTierCount = $tiersBody.find('.volume-tier-row').length;
             console.log('[SSPU Variants] Final tier count:', finalTierCount);
             console.log('[SSPU Variants] === ADD TIER (AI) END ===');
@@ -1119,7 +1119,7 @@
                 const $row = $(this);
                 const imageId = $row.find('.sspu-variant-image-id').val();
                 const variantName = $row.find('.sspu-variant-option-value').val() || 'Variant';
-                
+
                 if (imageId && imageId !== '0') {
                     variantsWithImages.push({
                         row: $row,
@@ -1135,7 +1135,7 @@
             }
 
             const confirmMsg = `This will apply Smart Rotate to ${variantsWithImages.length} variant image(s).\n\nThis will:\n• Extract each product\n• Apply white background\n• Center and align products\n• Add professional shadows\n\nThis process may take several minutes. Continue?`;
-            
+
             if (!confirm(confirmMsg)) return;
 
             const originalText = $button.html();
@@ -1162,7 +1162,7 @@
                 // Get image URL from WordPress
                 wp.media.attachment(variant.imageId).fetch().done(() => {
                     const imageUrl = wp.media.attachment(variant.imageId).get('url');
-                    
+
                     if (!imageUrl) {
                         failedCount++;
                         processNextVariant(index + 1);
@@ -1237,7 +1237,7 @@
                                             } else {
                                                 failedCount++;
                                             }
-                                            
+
                                             // Process next after a delay
                                             setTimeout(() => processNextVariant(index + 1), 2000);
                                         },
@@ -1257,12 +1257,12 @@
                             }
                         });
                     };
-                    
+
                     img.onerror = function() {
                         failedCount++;
                         processNextVariant(index + 1);
                     };
-                    
+
                     img.src = imageUrl;
                 }).fail(() => {
                     failedCount++;
@@ -1313,7 +1313,7 @@
             const self = this;
             const $row = $button.closest('.sspu-variant-row');
             const imageId = $row.find('.sspu-variant-image-id').val();
-            
+
             if (!imageId) {
                 APP.utils.notify('Please select a variant image first.', 'warning');
                 return;
@@ -1326,7 +1326,7 @@
             wp.media.attachment(imageId).fetch().done(() => {
                 const attachment = wp.media.attachment(imageId);
                 const imageUrl = attachment.get('url');
-                
+
                 if (!imageUrl) {
                     APP.utils.notify('Could not get image URL.', 'error');
                     $button.prop('disabled', false).text('🎨 Detect Color');
@@ -1361,12 +1361,12 @@
                         $button.prop('disabled', false).text('🎨 Detect Color');
                     });
                 };
-                
+
                 img.onerror = function() {
                     APP.utils.notify('Failed to load image for color detection.', 'error');
                     $button.prop('disabled', false).text('🎨 Detect Color');
                 };
-                
+
                 img.src = imageUrl;
             }).fail(() => {
                 APP.utils.notify('Could not load image from WordPress.', 'error');
@@ -1375,117 +1375,114 @@
         },
 
         /**
-         * Detect colors for all variants with images - NEW METHOD
+         * Detect colors for all variants with images - COMPLETE VERSION
          */
-        /**
- * Detect colors for all variants with images - FIXED VERSION
- */
-detectAllColors: function() {
-    const self = this;
-    console.log('Detect All Colors clicked'); // Debug log
-    
-    const $variantsWithImages = $('.sspu-variant-row').filter(function() {
-        return $(this).find('.sspu-variant-image-id').val() !== '';
-    });
+        detectAllColors: function() {
+            const self = this;
+            console.log('Detect All Colors clicked'); // Debug log
 
-    if ($variantsWithImages.length === 0) {
-        APP.utils.notify('No variants with images found. Please add images to variants first.', 'warning');
-        return;
-    }
+            const $variantsWithImages = $('.sspu-variant-row').filter(function() {
+                return $(this).find('.sspu-variant-image-id').val() !== '';
+            });
 
-    const $btn = $('#detect-all-colors-btn');
-    const originalText = $btn.text();
-    
-    $btn.prop('disabled', true).text('Detecting Colors...');
-    
-    let processedCount = 0;
-    let successCount = 0;
-    
-    APP.utils.notify(`Starting color detection for ${$variantsWithImages.length} variants...`, 'info');
-
-    // Process each variant sequentially to avoid overwhelming the API
-    function processNext(index) {
-        if (index >= $variantsWithImages.length) {
-            // All done
-            $btn.prop('disabled', false).text(originalText);
-            APP.utils.notify(`Color detection complete! Successfully detected ${successCount} out of ${$variantsWithImages.length} colors.`, 'success');
-            return;
-        }
-
-        const $row = $variantsWithImages.eq(index);
-        const imageId = $row.find('.sspu-variant-image-id').val();
-        const currentValue = $row.find('.sspu-variant-option-value').val();
-
-        // Skip if variant already has a value
-        if (currentValue && currentValue.trim() !== '') {
-            console.log(`Skipping variant ${index + 1} - already has value: ${currentValue}`);
-            processedCount++;
-            setTimeout(() => processNext(index + 1), 100); // Small delay
-            return;
-        }
-
-        // Get image and detect color
-        wp.media.attachment(imageId).fetch().done(() => {
-            const attachment = wp.media.attachment(imageId);
-            const imageUrl = attachment.get('url');
-            
-            if (!imageUrl) {
-                processedCount++;
-                setTimeout(() => processNext(index + 1), 100);
+            if ($variantsWithImages.length === 0) {
+                APP.utils.notify('No variants with images found. Please add images to variants first.', 'warning');
                 return;
             }
 
-            // Convert image to base64
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                const imageData = canvas.toDataURL('image/jpeg');
+            const $btn = $('#detect-all-colors-btn');
+            const originalText = $btn.text();
 
-                // Detect color
-                APP.utils.ajax('detect_color', {
-                    image_data: imageData
-                }).done(response => {
-                    if (response.success && response.data.color) {
-                        $row.find('.sspu-variant-option-value').val(response.data.color).addClass('updated-field');
-                        successCount++;
-                        console.log(`Variant ${index + 1}: Detected color - ${response.data.color}`);
-                    }
-                }).fail(() => {
-                    console.log(`Variant ${index + 1}: Color detection failed`);
-                }).always(() => {
+            $btn.prop('disabled', true).text('Detecting Colors...');
+
+            let processedCount = 0;
+            let successCount = 0;
+
+            APP.utils.notify(`Starting color detection for ${$variantsWithImages.length} variants...`, 'info');
+
+            // Process each variant sequentially to avoid overwhelming the API
+            function processNext(index) {
+                if (index >= $variantsWithImages.length) {
+                    // All done
+                    $btn.prop('disabled', false).text(originalText);
+                    APP.utils.notify(`Color detection complete! Successfully detected ${successCount} out of ${$variantsWithImages.length} colors.`, 'success');
+                    return;
+                }
+
+                const $row = $variantsWithImages.eq(index);
+                const imageId = $row.find('.sspu-variant-image-id').val();
+                const currentValue = $row.find('.sspu-variant-option-value').val();
+
+                // Skip if variant already has a value
+                if (currentValue && currentValue.trim() !== '') {
+                    console.log(`Skipping variant ${index + 1} - already has value: ${currentValue}`);
                     processedCount++;
-                    // Add delay between requests to avoid rate limiting
-                    setTimeout(() => processNext(index + 1), 1000);
-                });
-            };
-            
-            img.onerror = function() {
-                processedCount++;
-                setTimeout(() => processNext(index + 1), 100);
-            };
-            
-            img.src = imageUrl;
-        }).fail(() => {
-            processedCount++;
-            setTimeout(() => processNext(index + 1), 100);
-        });
-    }
+                    setTimeout(() => processNext(index + 1), 100); // Small delay
+                    return;
+                }
 
-    // Start processing
-    processNext(0);
-},
+                // Get image and detect color
+                wp.media.attachment(imageId).fetch().done(() => {
+                    const attachment = wp.media.attachment(imageId);
+                    const imageUrl = attachment.get('url');
+
+                    if (!imageUrl) {
+                        processedCount++;
+                        setTimeout(() => processNext(index + 1), 100);
+                        return;
+                    }
+
+                    // Convert image to base64
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        const imageData = canvas.toDataURL('image/jpeg');
+
+                        // Detect color
+                        APP.utils.ajax('detect_color', {
+                            image_data: imageData
+                        }).done(response => {
+                            if (response.success && response.data.color) {
+                                $row.find('.sspu-variant-option-value').val(response.data.color).addClass('updated-field');
+                                successCount++;
+                                console.log(`Variant ${index + 1}: Detected color - ${response.data.color}`);
+                            }
+                        }).fail(() => {
+                            console.log(`Variant ${index + 1}: Color detection failed`);
+                        }).always(() => {
+                            processedCount++;
+                            // Add delay between requests to avoid rate limiting
+                            setTimeout(() => processNext(index + 1), 1000);
+                        });
+                    };
+
+                    img.onerror = function() {
+                        processedCount++;
+                        setTimeout(() => processNext(index + 1), 100);
+                    };
+
+                    img.src = imageUrl;
+                }).fail(() => {
+                    processedCount++;
+                    setTimeout(() => processNext(index + 1), 100);
+                });
+            }
+
+            // Start processing
+            processNext(0);
+        },
 
         /**
-         * Apply design mask to all variants - NEW METHOD
+         * Apply design mask to all variants - FIXED VERSION
          */
         applyDesignMaskToAll: function() {
             const self = this;
-            
+
             // Find the first variant with design files
             const $firstVariantWithDesign = $('.sspu-variant-row').filter(function() {
                 const $row = $(this);
@@ -1499,7 +1496,7 @@ detectAllColors: function() {
                 return;
             }
 
-            // Get the original image ID and mask coordinates from the first variant
+            // Get the source image ID and mask URLs from the first variant
             const sourceImageId = $firstVariantWithDesign.find('.sspu-variant-image-id').val();
             const sourceBackgroundUrl = $firstVariantWithDesign.find('.sspu-designer-background-url').val();
             const sourceMaskUrl = $firstVariantWithDesign.find('.sspu-designer-mask-url').val();
@@ -1509,89 +1506,163 @@ detectAllColors: function() {
                 return;
             }
 
-            // Get all other variants with images
-            const $otherVariants = $('.sspu-variant-row').filter(function() {
-                const $row = $(this);
-                const imageId = $row.find('.sspu-variant-image-id').val();
-                const isNotSource = !$row.is($firstVariantWithDesign);
-                return imageId && isNotSource;
-            });
+            // Extract mask coordinates from the source mask image
+            // We'll analyze the source mask to determine the crop area
+            this.extractMaskCoordinatesFromImage(sourceMaskUrl, sourceImageId)
+                .then(maskCoordinates => {
+                    if (!maskCoordinates) {
+                        APP.utils.notify('Could not extract mask coordinates from source variant.', 'error');
+                        return;
+                    }
 
-            if ($otherVariants.length === 0) {
-                APP.utils.notify('No other variants with images found.', 'warning');
-                return;
-            }
+                    // Get all other variants with images
+                    const $otherVariants = $('.sspu-variant-row').filter(function() {
+                        const $row = $(this);
+                        const imageId = $row.find('.sspu-variant-image-id').val();
+                        const isNotSource = !$row.is($firstVariantWithDesign);
+                        return imageId && isNotSource;
+                    });
 
-            const confirmMsg = `This will create design files for ${$otherVariants.length} variants using the same mask area as the first variant. Continue?`;
-            if (!confirm(confirmMsg)) {
-                return;
-            }
+                    if ($otherVariants.length === 0) {
+                        APP.utils.notify('No other variants with images found.', 'warning');
+                        return;
+                    }
 
-            const $btn = $('#apply-design-mask-to-all');
-            const originalText = $btn.text();
-            $btn.prop('disabled', true).text('Creating Design Files...');
+                    const confirmMsg = `This will create design files for ${$otherVariants.length} variants using the same mask area as the first variant. Continue?`;
+                    if (!confirm(confirmMsg)) {
+                        return;
+                    }
 
-            let processedCount = 0;
-            let successCount = 0;
+                    const $btn = $('#apply-design-mask-to-all');
+                    const originalText = $btn.text();
+                    $btn.prop('disabled', true).text('Creating Design Files...');
 
-            APP.utils.notify(`Creating design files for ${$otherVariants.length} variants...`, 'info');
+                    let processedCount = 0;
+                    let successCount = 0;
 
-            // We need to extract the mask coordinates from the source variant
-            // Since we don't store the coordinates, we'll need to derive them from the existing mask
-            // For now, let's use a simpler approach: copy the existing design files
-            function processNext(index) {
-                if (index >= $otherVariants.length) {
-                    // All done
-                    $btn.prop('disabled', false).text(originalText);
-                    APP.utils.notify(`Design files created for ${successCount} out of ${$otherVariants.length} variants.`, 'success');
-                    
-                    // Enable paste button for other variants
-                    APP.state.copiedDesignMask = {
-                        background_url: sourceBackgroundUrl,
-                        mask_url: sourceMaskUrl
-                    };
-                    $('.paste-design-mask').prop('disabled', false);
-                    
-                    return;
-                }
+                    APP.utils.notify(`Creating design files for ${$otherVariants.length} variants...`, 'info');
 
-                const $row = $otherVariants.eq(index);
-                const imageId = $row.find('.sspu-variant-image-id').val();
-                const variantValue = $row.find('.sspu-variant-option-value').val() || `variant-${index + 1}`;
+                    // Process each variant with the extracted mask coordinates
+                    function processNext(index) {
+                        if (index >= $otherVariants.length) {
+                            // All done
+                            $btn.prop('disabled', false).text(originalText);
+                            APP.utils.notify(`Design files created for ${successCount} out of ${$otherVariants.length} variants.`, 'success');
 
-                // Since we can't easily extract the exact crop coordinates, 
-                // we'll create a centered crop that should work for most products
-                const defaultMaskCoordinates = {
-                    x: 50,  // Start 50px from left
-                    y: 50,  // Start 50px from top
-                    width: 300,  // 300px wide
-                    height: 300  // 300px tall
+                            // Enable paste button for other variants
+                            APP.state.copiedDesignMask = {
+                                background_url: sourceBackgroundUrl,
+                                mask_url: sourceMaskUrl,
+                                mask_coordinates: maskCoordinates
+                            };
+                            $('.paste-design-mask').prop('disabled', false);
+
+                            return;
+                        }
+
+                        const $row = $otherVariants.eq(index);
+                        const imageId = $row.find('.sspu-variant-image-id').val();
+                        const variantValue = $row.find('.sspu-variant-option-value').val() || `variant-${index + 1}`;
+
+                        // Use the extracted mask coordinates to create design files for this variant
+                        APP.utils.ajax('create_masked_image', {
+                            image_id: imageId,
+                            mask_coordinates: maskCoordinates
+                        }).done(response => {
+                            if (response.success) {
+                                $row.find('.sspu-designer-background-url').val(response.data.background_url);
+                                $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
+                                $row.find('.sspu-design-files-status').html('✓ Design files created');
+                                successCount++;
+                                console.log(`Variant ${index + 1} (${variantValue}): Design files created`);
+                            } else {
+                                console.log(`Variant ${index + 1} (${variantValue}): Failed - ${response.data.message}`);
+                            }
+                        }).fail(() => {
+                            console.log(`Variant ${index + 1} (${variantValue}): Request failed`);
+                        }).always(() => {
+                            processedCount++;
+                            // Add delay between requests
+                            setTimeout(() => processNext(index + 1), 500);
+                        });
+                    }
+
+                    // Start processing
+                    processNext(0);
+                })
+                .catch(error => {
+                    APP.utils.notify('Error extracting mask coordinates: ' + error.message, 'error');
+                });
+        },
+
+        /**
+         * Extract mask coordinates from a mask image by analyzing it
+         */
+        extractMaskCoordinatesFromImage: function(maskUrl, originalImageId) {
+            return new Promise((resolve, reject) => {
+                // Create a canvas to analyze the mask image
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+
+                    try {
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const data = imageData.data;
+
+                        // Find the transparent rectangle (the mask area)
+                        let minX = canvas.width, minY = canvas.height;
+                        let maxX = 0, maxY = 0;
+                        let foundTransparent = false;
+
+                        for (let y = 0; y < canvas.height; y++) {
+                            for (let x = 0; x < canvas.width; x++) {
+                                const index = (y * canvas.width + x) * 4;
+                                const alpha = data[index + 3]; // Alpha channel
+
+                                // If pixel is transparent (alpha < 128), it's part of the mask
+                                if (alpha < 128) {
+                                    foundTransparent = true;
+                                    minX = Math.min(minX, x);
+                                    minY = Math.min(minY, y);
+                                    maxX = Math.max(maxX, x);
+                                    maxY = Math.max(maxY, y);
+                                }
+                            }
+                        }
+
+                        if (!foundTransparent) {
+                            reject(new Error('No transparent area found in mask image'));
+                            return;
+                        }
+
+                        // Calculate the coordinates
+                        const coordinates = {
+                            x: minX,
+                            y: minY,
+                            width: maxX - minX + 1,
+                            height: maxY - minY + 1
+                        };
+
+                        console.log('Extracted mask coordinates:', coordinates);
+                        resolve(coordinates);
+
+                    } catch (error) {
+                        reject(new Error('Failed to analyze mask image: ' + error.message));
+                    }
                 };
 
-                APP.utils.ajax('create_masked_image', {
-                    image_id: imageId,
-                    mask_coordinates: defaultMaskCoordinates
-                }).done(response => {
-                    if (response.success) {
-                        $row.find('.sspu-designer-background-url').val(response.data.background_url);
-                        $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
-                        $row.find('.sspu-design-files-status').html('✓ Design files created');
-                        successCount++;
-                        console.log(`Variant ${index + 1} (${variantValue}): Design files created`);
-                    } else {
-                        console.log(`Variant ${index + 1} (${variantValue}): Failed - ${response.data.message}`);
-                    }
-                }).fail(() => {
-                    console.log(`Variant ${index + 1} (${variantValue}): Request failed`);
-                }).always(() => {
-                    processedCount++;
-                    // Add delay between requests
-                    setTimeout(() => processNext(index + 1), 500);
-                });
-            }
+                img.onerror = function() {
+                    reject(new Error('Failed to load mask image'));
+                };
 
-            // Start processing
-            processNext(0);
+                img.src = maskUrl;
+            });
         },
 
         /**
@@ -1602,7 +1673,7 @@ detectAllColors: function() {
             const self = this;
             const $row = $button.closest('.sspu-variant-row');
             const imageId = $row.find('.sspu-variant-image-id').val();
-            
+
             if (!imageId) {
                 APP.utils.notify('Please select a variant image first.', 'warning');
                 return;
@@ -1663,7 +1734,7 @@ detectAllColors: function() {
                 // Handle confirm
                 $('#confirm-mask').on('click', function() {
                     const cropData = cropper.getData();
-                    
+
                     $button.prop('disabled', true).text('Creating files...');
                     $modal.fadeOut();
 
@@ -1681,7 +1752,7 @@ detectAllColors: function() {
                             $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
                             $row.find('.sspu-design-files-status').html('✓ Design files created');
                             APP.utils.notify('Design files created successfully!', 'success');
-                            
+
                             // Enable paste button for other variants
                             APP.state.copiedDesignMask = {
                                 background_url: response.data.background_url,
@@ -1705,13 +1776,13 @@ detectAllColors: function() {
                     cropper.destroy();
                     $modal.fadeOut(() => $modal.remove());
                 });
-                
+
                 // Handle close button
                 $('.sspu-lightbox-close').on('click', function() {
                     cropper.destroy();
                     $modal.fadeOut(() => $modal.remove());
                 });
-                
+
                 // Handle clicking outside the modal content
                 $modal.on('click', function(e) {
                     if (e.target === this) {
@@ -1719,7 +1790,7 @@ detectAllColors: function() {
                         $modal.fadeOut(() => $modal.remove());
                     }
                 });
-                
+
                 // Handle ESC key
                 $(document).on('keydown.sspu-lightbox', function(e) {
                     if (e.key === 'Escape') {
@@ -1768,7 +1839,7 @@ detectAllColors: function() {
             $row.find('.sspu-designer-background-url').val(APP.state.copiedDesignMask.background_url);
             $row.find('.sspu-designer-mask-url').val(APP.state.copiedDesignMask.mask_url);
             $row.find('.sspu-design-files-status').html('✓ Design files pasted');
-            
+
             APP.utils.notify('Design files pasted successfully!', 'success');
         }
     };
