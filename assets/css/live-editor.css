@@ -1,0 +1,489 @@
+/* Live Product Editor Styles */
+
+.sspu-live-editor {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.sspu-editor-container {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    margin-top: 20px;
+}
+
+/* Search Section */
+.sspu-search-section {
+    padding: 20px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.search-filters {
+    background: #f5f5f5;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.filter-row {
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    flex: 1;
+    min-width: 150px;
+}
+
+.filter-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #23282d;
+}
+
+.filter-group select,
+.filter-group input[type="text"] {
+    width: 100%;
+}
+
+#sspu-search-results {
+    margin-top: 20px;
+}
+
+.results-header h3 {
+    margin: 0 0 15px 0;
+    color: #23282d;
+}
+
+.no-results {
+    padding: 40px;
+    text-align: center;
+    color: #666;
+    font-style: italic;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-badge.published {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-badge.draft {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* Editor Section */
+#sspu-editor-section {
+    padding: 20px;
+}
+
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.editor-header h2 {
+    margin: 0;
+    font-size: 24px;
+}
+
+.editor-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.autosave-status {
+    font-size: 13px;
+    margin-left: 10px;
+}
+
+.autosave-status .saved {
+    color: #46b450;
+}
+
+.autosave-status .unsaved {
+    color: #dc3232;
+}
+
+.autosave-status .autosaved {
+    color: #666;
+}
+
+/* Tabs */
+.editor-tabs {
+    margin-top: 20px;
+}
+
+.tab-nav {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-bottom: 1px solid #ccd0d4;
+}
+
+.tab-nav li {
+    margin: 0;
+}
+
+.tab-nav a {
+    display: block;
+    padding: 10px 20px;
+    text-decoration: none;
+    color: #23282d;
+    border: 1px solid transparent;
+    border-bottom: none;
+    background: #f1f1f1;
+    margin-bottom: -1px;
+}
+
+.tab-nav .ui-tabs-active a {
+    background: #fff;
+    border-color: #ccd0d4;
+    border-bottom-color: #fff;
+    color: #0073aa;
+}
+
+.tab-content {
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-top: none;
+}
+
+/* Form Elements */
+.form-table th {
+    width: 200px;
+    font-weight: 600;
+}
+
+.large-text {
+    width: 100%;
+    max-width: 600px;
+}
+
+.url-preview {
+    background: #f5f5f5;
+    padding: 8px 12px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+    font-family: monospace;
+    font-size: 13px;
+    color: #666;
+}
+
+#url-handle-preview {
+    color: #0073aa;
+    font-weight: 600;
+}
+
+/* Images Section */
+.images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.image-item {
+    position: relative;
+    border: 2px solid #e5e5e5;
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: move;
+    transition: all 0.2s;
+}
+
+.image-item:hover {
+    border-color: #0073aa;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.image-item img {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+}
+
+.image-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.image-item:hover .image-overlay {
+    opacity: 1;
+}
+
+.main-badge {
+    background: #0073aa;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.remove-image-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: #dc3232;
+    color: #fff;
+    border: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.remove-image-btn:hover {
+    background: #aa2222;
+}
+
+.image-placeholder {
+    background: #f5f5f5;
+    border: 2px dashed #ccc;
+}
+
+.no-images {
+    padding: 40px;
+    text-align: center;
+    color: #666;
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+.image-actions {
+    margin-top: 15px;
+}
+
+/* Variants Section */
+.variants-section {
+    margin-top: 20px;
+}
+
+.variants-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.variants-header h3 {
+    margin: 0;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 10px;
+}
+
+#sspu-variants-table {
+    margin-top: 15px;
+}
+
+#sspu-variants-table input[type="text"],
+#sspu-variants-table input[type="number"],
+#sspu-variants-table select {
+    width: 100%;
+}
+
+.inventory-status {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 5px;
+}
+
+.inventory-status.in-stock {
+    background: #46b450;
+}
+
+.inventory-status.out-of-stock {
+    background: #dc3232;
+}
+
+.inventory-status.not-tracked {
+    background: #999;
+}
+
+/* Collections */
+.collections-checklist {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    background: #f9f9f9;
+}
+
+.collections-checklist label {
+    display: block;
+    margin-bottom: 5px;
+    cursor: pointer;
+}
+
+.collections-checklist input[type="checkbox"] {
+    margin-right: 5px;
+}
+
+/* Metafields */
+.metafields-section {
+    margin-top: 20px;
+}
+
+.metafield-row {
+    margin-bottom: 15px;
+    padding: 15px;
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+.metafield-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr 150px auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.metafield-fields input,
+.metafield-fields select {
+    width: 100%;
+}
+
+/* Submit Section */
+.submit-section {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e5e5;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.save-status {
+    color: #46b450;
+    font-weight: 500;
+}
+
+/* Bulk Edit Modal */
+#bulk-price-modal {
+    padding: 20px;
+}
+
+#bulk-price-modal h3 {
+    margin-top: 0;
+}
+
+.bulk-edit-options label {
+    display: block;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f5f5f5;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.bulk-edit-options input[type="radio"] {
+    margin-right: 10px;
+}
+
+.bulk-edit-options input[type="number"] {
+    width: 80px;
+    margin-left: 10px;
+}
+
+/* Loading States */
+.spinner.is-active {
+    visibility: visible;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .filter-row {
+        flex-direction: column;
+    }
+    
+    .filter-group {
+        width: 100%;
+    }
+    
+    .editor-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+    
+    .images-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    }
+    
+    .metafield-fields {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Notifications */
+.notice {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* WordPress UI Integration */
+.wp-editor-area {
+    width: 100%;
+}
+
+.ui-dialog {
+    z-index: 100100 !important;
+}
+
+.ui-widget-overlay {
+    z-index: 100099 !important;
+}

@@ -1,1081 +1,1271 @@
-<?php
-// If this file is called directly, abort.
-if ( ! defined( 'WPINC' ) ) {
-    die;
-}
-
-class SSPU_AI_Image_Editor {
-    
-    private $openai_api_key;
-    private $gemini_api_key;
-    private $anthropic_api_key;
-    private $last_error = '';
-    private $supported_models = [];
-    
-    public function __construct() {
-        $this->openai_api_key = get_option('sspu_openai_api_key');
-        $this->gemini_api_key = get_option('sspu_gemini_api_key');
-        $this->anthropic_api_key = get_option('sspu_anthropic_api_key');
-        
-        $this->init_supported_models();
-    }
-    
-    /**
-     * Initialize supported models with their configurations
-     */
-    private function init_supported_models() {
-        $this->supported_models = [
-            // OpenAI Models
-            'gpt-4o' => [
-                'provider' => 'openai',
-                'name' => 'GPT-4 Omni',
-                'endpoint' => 'https://api.openai.com/v1/chat/completions',
-                'supports_vision' => true,
-                'supports_generation' => false,
-                'max_tokens' => 4096,
-                'description' => 'Latest multimodal model with vision capabilities'
-            ],
-            'gpt-4-turbo' => [
-                'provider' => 'openai',
-                'name' => 'GPT-4 Turbo with Vision',
-                'endpoint' => 'https://api.openai.com/v1/chat/completions',
-                'supports_vision' => true,
-                'supports_generation' => false,
-                'max_tokens' => 4096,
-                'description' => 'GPT-4 Turbo with vision understanding'
-            ],
-            'dall-e-3' => [
-                'provider' => 'openai',
-                'name' => 'DALL-E 3',
-                'endpoint' => 'https://api.openai.com/v1/images/generations',
-                'supports_vision' => false,
-                'supports_generation' => true,
-                'description' => 'Advanced image generation model'
-            ],
-            
-            // Google Gemini Models
-            'gemini-2.0-flash-preview' => [
-                'provider' => 'gemini',
-                'name' => 'Gemini 2.0 Flash Preview (Image Gen)',
-                'model_id' => 'gemini-2.0-flash-preview-image-generation',
-                'supports_vision' => true,
-                'supports_generation' => true, // This model can generate images!
-                'max_tokens' => 8192,
-                'description' => 'Latest Gemini model with image generation capabilities'
-            ],
-            'gemini-2.0-flash-exp' => [
-                'provider' => 'gemini',
-                'name' => 'Gemini 2.0 Flash Experimental',
-                'model_id' => 'gemini-2.0-flash-exp',
-                'supports_vision' => true,
-                'supports_generation' => false,
-                'max_tokens' => 8192,
-                'description' => 'Latest experimental Gemini model for analysis'
-            ],
-            'gemini-1.5-pro' => [
-                'provider' => 'gemini',
-                'name' => 'Gemini 1.5 Pro',
-                'model_id' => 'gemini-1.5-pro-latest',
-                'supports_vision' => true,
-                'supports_generation' => false,
-                'max_tokens' => 8192,
-                'description' => 'Advanced reasoning with vision'
-            ],
-            'gemini-1.5-flash' => [
-                'provider' => 'gemini',
-                'name' => 'Gemini 1.5 Flash',
-                'model_id' => 'gemini-1.5-flash-latest',
-                'supports_vision' => true,
-                'supports_generation' => false,
-                'max_tokens' => 8192,
-                'description' => 'Fast multimodal model'
-            ]
-        ];
-    }
-    
-    /**
-     * Handle AI image editing request
-     */
-    public function handle_ai_edit() {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        
-        if (!current_user_can('upload_files')) {
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-        
-        $image_data = $_POST['image_data'];
-        $prompt = sanitize_textarea_field($_POST['prompt']);
-        $ai_service = sanitize_text_field($_POST['ai_service']);
-        $model = sanitize_text_field($_POST['model'] ?? 'gpt-4o');
-        $session_id = sanitize_text_field($_POST['session_id']);
-        
-        // Log request details
-        error_log('SSPU AI Editor Request:');
-        error_log('  Service: ' . $ai_service);
-        error_log('  Model: ' . $model);
-        error_log('  Prompt: ' . substr($prompt, 0, 100) . '...');
-        
-        // Route to appropriate handler based on service
-        switch ($ai_service) {
-            case 'analyze_chatgpt':
-                $result = $this->analyze_with_model($image_data, $prompt, $model);
-                break;
-                
-            case 'analyze_gemini':
-                $result = $this->analyze_with_model($image_data, $prompt, $model);
-                break;
-                
-            case 'edit_dalle':
-                $result = $this->generate_with_dalle($image_data, $prompt);
-                break;
-                
-            case 'generate_gemini':
-                $result = $this->generate_with_gemini($image_data, $prompt, $model);
-                break;
-                
-            case 'batch_process':
-                $result = $this->batch_process($image_data, $prompt, $model);
-                break;
-                
-            default:
-                $result = $this->analyze_with_model($image_data, $prompt, $model);
-                break;
-        }
-        
-        if ($result && !isset($result['error'])) {
-            // Store in session history
-            $this->store_chat_history($session_id, 'user', $prompt);
-            $this->store_chat_history($session_id, 'ai', $result['message'], $result['image'] ?? null);
-            
-            wp_send_json_success([
-                'edited_image' => $result['image'] ?? null,
-                'response' => $result['message']
-            ]);
-        } else {
-            $error_msg = $result['error'] ?? $this->last_error ?? 'Failed to process image';
-            error_log('SSPU AI Editor Error: ' . $error_msg);
-            wp_send_json_error(['message' => $error_msg]);
-        }
-    }
-    
-    /**
-     * Analyze image with any supported model
-     */
-    private function analyze_with_model($image_data, $prompt, $model_id) {
-        if (!isset($this->supported_models[$model_id])) {
-            return ['error' => 'Unsupported model: ' . $model_id];
-        }
-        
-        $model = $this->supported_models[$model_id];
-        
-        // Check if this is a generation request for a model that supports it
-        if ($model['supports_generation'] && $this->is_generation_prompt($prompt)) {
-            switch ($model['provider']) {
-                case 'gemini':
-                    return $this->generate_with_gemini($image_data, $prompt, $model_id);
-                case 'openai':
-                    return $this->generate_with_dalle($image_data, $prompt);
-            }
-        }
-        
-        // Otherwise, analyze as usual
-        if (!$model['supports_vision']) {
-            return ['error' => 'Model does not support vision analysis'];
-        }
-        
-        // Route to appropriate provider
-        switch ($model['provider']) {
-            case 'openai':
-                return $this->analyze_with_openai($image_data, $prompt, $model_id);
-                
-            case 'gemini':
-                return $this->analyze_with_gemini($image_data, $prompt, $model_id);
-                
-            default:
-                return ['error' => 'Unknown provider for model'];
-        }
-    }
-    
-    /**
-     * Helper method to detect generation prompts
-     */
-    private function is_generation_prompt($prompt) {
-        $generation_keywords = [
-            'place on', 'put on', 'background', 'extract', 
-            'remove background', 'lifestyle', 'create', 
-            'generate', 'make', 'stage', 'add to',
-            'place it', 'put it', 'on a'
-        ];
-        
-        $prompt_lower = strtolower($prompt);
-        foreach ($generation_keywords as $keyword) {
-            if (strpos($prompt_lower, $keyword) !== false) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Analyze image with OpenAI models
-     */
-    private function analyze_with_openai($image_data, $prompt, $model_id) {
-        if (empty($this->openai_api_key)) {
-            return ['error' => 'OpenAI API key not configured'];
-        }
-        
-        $model_config = $this->supported_models[$model_id];
-        
-        // Ensure image data is properly formatted
-        if (strpos($image_data, 'data:') !== 0) {
-            $mime_type = $this->detect_mime_type_from_data($image_data);
-            $image_data = "data:{$mime_type};base64," . $image_data;
-        }
-        
-        // Build the system prompt for product image analysis
-        $system_prompt = $this->get_system_prompt_for_analysis();
-        
-        // Create the request
-        $messages = [
-            [
-                'role' => 'system',
-                'content' => $system_prompt
-            ],
-            [
-                'role' => 'user',
-                'content' => [
-                    [
-                        'type' => 'text',
-                        'text' => $prompt
-                    ],
-                    [
-                        'type' => 'image_url',
-                        'image_url' => [
-                            'url' => $image_data,
-                            'detail' => 'high'
-                        ]
-                    ]
-                ]
-            ]
-        ];
-        
-        $response = wp_remote_post($model_config['endpoint'], [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->openai_api_key,
-                'Content-Type' => 'application/json'
-            ],
-            'body' => json_encode([
-                'model' => $model_id,
-                'messages' => $messages,
-                'max_tokens' => $model_config['max_tokens'] ?? 1000,
-                'temperature' => 0.7
-            ]),
-            'timeout' => 60
-        ]);
-        
-        if (is_wp_error($response)) {
-            return ['error' => 'Network error: ' . $response->get_error_message()];
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (isset($data['error'])) {
-            return ['error' => 'OpenAI API Error: ' . $data['error']['message']];
-        }
-        
-        if (isset($data['choices'][0]['message']['content'])) {
-            return [
-                'message' => $data['choices'][0]['message']['content'],
-                'image' => null // Analysis doesn't generate new images
-            ];
-        }
-        
-        return ['error' => 'Invalid response from OpenAI'];
-    }
-    
-    /**
-     * Analyze image with Gemini models
-     */
-    private function analyze_with_gemini($image_data, $prompt, $model_id) {
-        if (empty($this->gemini_api_key)) {
-            return ['error' => 'Gemini API key not configured'];
-        }
-        
-        $model_config = $this->supported_models[$model_id];
-        
-        // Extract base64 data
-        $base64_data = $this->extract_base64_data($image_data);
-        if (empty($base64_data)) {
-            return ['error' => 'Invalid image data provided'];
-        }
-        
-        $mime_type = $this->detect_mime_type($image_data);
-        
-        // Build API URL
-        $api_url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_config['model_id']}:generateContent?key=" . $this->gemini_api_key;
-        
-        // Create enhanced prompt
-        $enhanced_prompt = $this->get_enhanced_prompt_for_gemini($prompt);
-        
-        $request_body = [
-            'contents' => [
-                [
-                    'role' => 'user',
-                    'parts' => [
-                        [
-                            'text' => $enhanced_prompt
-                        ],
-                        [
-                            'inlineData' => [
-                                'mimeType' => $mime_type,
-                                'data' => $base64_data
-                            ]
-                        ]
-                    ]
-                ]
-            ],
-            'generationConfig' => [
-                'temperature' => 0.4,
-                'topP' => 0.8,
-                'topK' => 40,
-                'maxOutputTokens' => $model_config['max_tokens'] ?? 2048,
-                'responseMimeType' => 'text/plain'
-            ],
-            'safetySettings' => [
-                ['category' => 'HARM_CATEGORY_HATE_SPEECH', 'threshold' => 'BLOCK_ONLY_HIGH'],
-                ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_ONLY_HIGH'],
-                ['category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold' => 'BLOCK_ONLY_HIGH'],
-                ['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_ONLY_HIGH']
-            ]
-        ];
-        
-        $response = wp_remote_post($api_url, [
-            'headers' => [
-                'Content-Type' => 'application/json'
-            ],
-            'body' => json_encode($request_body),
-            'timeout' => 60
-        ]);
-        
-        if (is_wp_error($response)) {
-            return ['error' => 'Network error: ' . $response->get_error_message()];
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (isset($data['error'])) {
-            return ['error' => 'Gemini API Error: ' . $data['error']['message']];
-        }
-        
-        if (isset($data['candidates'][0]['content']['parts'][0]['text'])) {
-            $response_text = $data['candidates'][0]['content']['parts'][0]['text'];
-            
-            return [
-                'message' => "🔍 **{$model_config['name']} Analysis:**\n\n" . $response_text,
-                'image' => null
-            ];
-        }
-        
-        return ['error' => 'Invalid response from Gemini'];
-    }
-    
-    /**
-     * Generate image with Gemini 2.0 Flash Preview
-     */
-    private function generate_with_gemini($image_data, $prompt, $model_id = 'gemini-2.0-flash-preview') {
-        if (empty($this->gemini_api_key)) {
-            return ['error' => 'Gemini API key not configured'];
-        }
-        
-        $model_config = $this->supported_models[$model_id];
-        
-        // Extract base64 data
-        $base64_data = $this->extract_base64_data($image_data);
-        if (empty($base64_data)) {
-            return ['error' => 'Invalid image data provided'];
-        }
-        
-        $mime_type = $this->detect_mime_type($image_data);
-        
-        // Build API URL for the image generation model
-        $api_url = "https://generativelanguage.googleapis.com/v1beta/models/{$model_config['model_id']}:generateContent?key=" . $this->gemini_api_key;
-        
-        // Build the generation prompt with extraction emphasis
-        $generation_prompt = "IMPORTANT: Extract the existing product from this image exactly as it appears - do not recreate or modify the product itself. " . $prompt;
-        
-        $request_body = [
-            'contents' => [
-                [
-                    'role' => 'user',
-                    'parts' => [
-                        [
-                            'inlineData' => [
-                                'mimeType' => $mime_type,
-                                'data' => $base64_data
-                            ]
-                        ],
-                        [
-                            'text' => $generation_prompt
-                        ]
-                    ]
-                ]
-            ],
-            'generationConfig' => [
-                'temperature' => 1.0,
-                'topP' => 0.95,
-                'topK' => 40,
-                'maxOutputTokens' => 8192,
-                'responseModalities' => ['TEXT', 'IMAGE'] // Enable image generation
-            ],
-            'safetySettings' => [
-                ['category' => 'HARM_CATEGORY_HATE_SPEECH', 'threshold' => 'BLOCK_ONLY_HIGH'],
-                ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_ONLY_HIGH'],
-                ['category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold' => 'BLOCK_ONLY_HIGH'],
-                ['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_ONLY_HIGH']
-            ]
-        ];
-        
-        error_log('Gemini Image Generation Request URL: ' . $api_url);
-        error_log('Request Body: ' . json_encode($request_body));
-        
-        $response = wp_remote_post($api_url, [
-            'headers' => [
-                'Content-Type' => 'application/json'
-            ],
-            'body' => json_encode($request_body),
-            'timeout' => 120 // Longer timeout for image generation
-        ]);
-        
-        if (is_wp_error($response)) {
-            return ['error' => 'Network error: ' . $response->get_error_message()];
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        error_log('Gemini Response: ' . substr($body, 0, 500));
-        
-        if (isset($data['error'])) {
-            return ['error' => 'Gemini API Error: ' . $data['error']['message']];
-        }
-        
-        // Parse the response to extract generated image
-        if (isset($data['candidates'][0]['content']['parts'])) {
-            $parts = $data['candidates'][0]['content']['parts'];
-            $text_response = '';
-            $generated_image = null;
-            
-            foreach ($parts as $part) {
-                if (isset($part['text'])) {
-                    $text_response .= $part['text'];
-                }
-                if (isset($part['inlineData'])) {
-                    // Extract the generated image
-                    $image_data = $part['inlineData']['data'];
-                    $image_mime = $part['inlineData']['mimeType'] ?? 'image/png';
-                    $generated_image = "data:{$image_mime};base64,{$image_data}";
-                }
-            }
-            
-            if ($generated_image) {
-                return [
-                    'image' => $generated_image,
-                    'message' => "✨ **Gemini 2.0 Flash Generated Image**\n\n" . 
-                               "Successfully extracted your product and created a new image:\n\n" .
-                               ($text_response ? $text_response : "Image generated based on your requirements.")
-                ];
-            } else {
-                return [
-                    'message' => $text_response ?: 'No image was generated. The model may not support this request.',
-                    'image' => null
-                ];
-            }
-        }
-        
-        return ['error' => 'Invalid response from Gemini'];
-    }
-    
-    /**
-     * Generate image with DALL-E 3
-     */
-    private function generate_with_dalle($image_data, $prompt) {
-        if (empty($this->openai_api_key)) {
-            return ['error' => 'OpenAI API key not configured'];
-        }
-        
-        // First, analyze the current image to understand context
-        $analysis_prompt = "Analyze this product image and identify: 1) The EXACT product shown (do not recreate), 2) Current background to remove, 3) Key product features that must be preserved exactly as shown";
-        $analysis = $this->analyze_with_openai($image_data, $analysis_prompt, 'gpt-4o');
-        
-        if (isset($analysis['error'])) {
-            return $analysis;
-        }
-        
-        // Build enhanced generation prompt
-        $generation_prompt = $this->build_dalle_prompt($prompt, $analysis['message'] ?? '');
-        
-        // Generate with DALL-E 3
-        $api_url = 'https://api.openai.com/v1/images/generations';
-        
-        $response = wp_remote_post($api_url, [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $this->openai_api_key,
-                'Content-Type' => 'application/json'
-            ],
-            'body' => json_encode([
-                'model' => 'dall-e-3',
-                'prompt' => $generation_prompt,
-                'n' => 1,
-                'size' => '1024x1024',
-                'quality' => 'hd',
-                'style' => 'natural'
-            ]),
-            'timeout' => 120
-        ]);
-        
-        if (is_wp_error($response)) {
-            return ['error' => 'Network error: ' . $response->get_error_message()];
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (isset($data['error'])) {
-            return ['error' => 'DALL-E API Error: ' . $data['error']['message']];
-        }
-        
-        if (isset($data['data'][0]['url'])) {
-            // Download and convert to base64
-            $image_url = $data['data'][0]['url'];
-            $image_response = wp_remote_get($image_url, ['timeout' => 60]);
-            
-            if (!is_wp_error($image_response)) {
-                $image_content = wp_remote_retrieve_body($image_response);
-                $base64_image = base64_encode($image_content);
-                $data_uri = 'data:image/png;base64,' . $base64_image;
-                
-                return [
-                    'image' => $data_uri,
-                    'message' => "🎨 **DALL-E 3 Generated Image**\n\n" . 
-                               "Successfully extracted your product and created a new image based on your requirements:\n\n" .
-                               "• " . str_replace("\n", "\n• ", $this->summarize_dalle_prompt($generation_prompt))
-                ];
-            }
-        }
-        
-        return ['error' => 'Failed to generate image with DALL-E'];
-    }
-    
-    /**
-     * Batch process multiple edits
-     */
-    private function batch_process($image_data, $prompt, $model_id) {
-        $model = $this->supported_models[$model_id] ?? null;
-        
-        // Define batch operations
-        $operations = [
-            'white_bg' => 'EXTRACT the existing product exactly as shown and place on pure white background with professional lighting',
-            'lifestyle' => 'EXTRACT the existing product without modifications and place in modern lifestyle setting appropriate for the product type',
-            'hero' => 'EXTRACT the original product and create hero image with dramatic lighting and professional composition',
-            'social' => 'EXTRACT the product as-is and optimize for social media with eye-catching composition and vibrant colors'
-        ];
-        
-        $results = [];
-        $generated_count = 0;
-        
-        foreach ($operations as $key => $operation_prompt) {
-            // Use appropriate generation method based on model
-            if ($model && $model['provider'] === 'gemini' && $model['supports_generation']) {
-                $result = $this->generate_with_gemini($image_data, $operation_prompt, $model_id);
-            } else {
-                $result = $this->generate_with_dalle($image_data, $operation_prompt);
-            }
-            
-            if (!isset($result['error']) && isset($result['image'])) {
-                $results[] = [
-                    'type' => $key,
-                    'image' => $result['image'],
-                    'description' => $operation_prompt
-                ];
-                $generated_count++;
-            }
-            
-            // Add delay to avoid rate limiting
-            if ($generated_count < count($operations)) {
-                sleep(2);
-            }
-        }
-        
-        if ($generated_count > 0) {
-            $model_name = ($model && $model['provider'] === 'gemini') ? 'Gemini' : 'DALL-E';
-            return [
-                'message' => "📦 **Batch Processing Complete with {$model_name}**\n\n" .
-                            "Generated {$generated_count} variations using your extracted product:\n\n" .
-                            "• White Background - Professional product shot\n" .
-                            "• Lifestyle Setting - Contextual placement\n" .
-                            "• Hero Image - Premium presentation\n" .
-                            "• Social Media - Optimized for engagement\n\n" .
-                            "All variations use your original product extracted from the source image.",
-                'batch_results' => $results
-            ];
-        }
-        
-        return ['error' => 'Failed to generate batch variations'];
-    }
-    
-    /**
-     * Get system prompt for analysis
-     */
-    private function get_system_prompt_for_analysis() {
-        return "You are an expert e-commerce product photographer and image consultant. Your role is to analyze product images and provide actionable suggestions for improvement. 
-
-CRITICAL INSTRUCTION: Always recommend EXTRACTING the existing product exactly as it appears in the original image. Never suggest recreating or modifying the product itself - only its presentation, background, and environment.
-
-Focus on:
-1. **Product Extraction**: Identify how to cleanly EXTRACT the existing product from its current background while preserving all product details
-2. **Background Recommendations**: Suggest appropriate backgrounds (lifestyle, studio, contextual) for the EXTRACTED product
-3. **Lighting Analysis**: Evaluate current lighting and suggest improvements while keeping the product unchanged
-4. **Composition**: Recommend optimal angles, positioning, and framing for the EXISTING product
-5. **E-commerce Optimization**: Ensure images meet platform requirements using the ORIGINAL product
-6. **Brand Enhancement**: Suggest where and how to add logos without altering the product
-
-Always emphasize: 'Extract the existing product exactly as shown' in your recommendations.";
-    }
-    
-    /**
-     * Get enhanced prompt for Gemini
-     */
-    private function get_enhanced_prompt_for_gemini($user_prompt) {
-        return "IMPORTANT: When analyzing or suggesting edits, always EXTRACT the existing product exactly as shown - never recreate or modify the product itself.\n\n" .
-               $user_prompt . "\n\n" . 
-               "Please analyze this product image as an e-commerce expert. Provide:\n" .
-               "1. **Current State Analysis**: What you see in the image (identify the exact product to extract)\n" .
-               "2. **Improvement Suggestions**: Specific changes to enhance the image while keeping the product unchanged\n" .
-               "3. **Implementation Steps**: How to achieve these improvements by extracting the existing product\n" .
-               "4. **Expected Results**: How the changes will improve conversion rates\n\n" .
-               "Remember: Always extract the original product, never recreate it.";
-    }
-    
-    /**
-     * Build DALL-E prompt from user input and analysis
-     */
-    private function build_dalle_prompt($user_prompt, $analysis) {
-        // Extract key information from analysis if available
-        $product_description = $this->extract_product_description($analysis);
-        
-        // Build detailed prompt for DALL-E with extraction emphasis
-        $dalle_prompt = "IMPORTANT: Extract and use the EXISTING product from the reference image exactly as it appears - do not recreate or modify the product itself. ";
-        
-        if ($product_description) {
-            $dalle_prompt .= "The existing product to extract is {$product_description}. ";
-        }
-        
-        $dalle_prompt .= $user_prompt . ". ";
-        
-        $dalle_prompt .= "Ensure you: extract the original product without any modifications, maintain exact product details and proportions, " .
-                        "apply professional studio lighting to the scene (not the product), create sharp focus on the extracted product, " .
-                        "and maintain the product's authentic appearance from the original image.";
-        
-        return $dalle_prompt;
-    }
-    
-    /**
-     * Extract product description from analysis
-     */
-    private function extract_product_description($analysis) {
-        // Simple extraction - could be enhanced with more sophisticated parsing
-        if (preg_match('/product is ([^.]+)/i', $analysis, $matches)) {
-            return $matches[1];
-        }
-        return '';
-    }
-    
-    /**
-     * Summarize DALL-E prompt for user feedback
-     */
-    private function summarize_dalle_prompt($prompt) {
-        // Extract key points from the prompt
-        $summary = [];
-        
-        if (stripos($prompt, 'white background') !== false) {
-            $summary[] = "Clean white background";
-        }
-        if (stripos($prompt, 'lifestyle') !== false) {
-            $summary[] = "Lifestyle setting";
-        }
-        if (stripos($prompt, 'professional') !== false) {
-            $summary[] = "Professional lighting";
-        }
-        if (stripos($prompt, 'logo') !== false) {
-            $summary[] = "Brand logo included";
-        }
-        if (stripos($prompt, 'extract') !== false) {
-            $summary[] = "Original product extracted";
-        }
-        
-        return implode("\n", $summary);
-    }
-    
-    /**
-     * Extract base64 data from data URI or return as-is
-     */
-    private function extract_base64_data($image_data) {
-        if (empty($image_data)) {
-            return '';
-        }
-        
-        // If it's a data URI, extract the base64 part
-        if (strpos($image_data, 'data:') === 0) {
-            $parts = explode(',', $image_data, 2);
-            if (count($parts) === 2) {
-                return trim($parts[1]);
-            }
-        }
-        
-        // Assume it's already base64
-        return trim($image_data);
-    }
-    
-    /**
-     * Detect MIME type from data URI
-     */
-    private function detect_mime_type($image_data) {
-        if (strpos($image_data, 'data:') === 0) {
-            $parts = explode(';', $image_data, 2);
-            if (count($parts) >= 2) {
-                $mime_type = str_replace('data:', '', $parts[0]);
-                $supported_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-                if (in_array($mime_type, $supported_types)) {
-                    return $mime_type;
-                }
-            }
-        }
-        return 'image/jpeg';
-    }
-    
-    /**
-     * Detect MIME type from base64 data
-     */
-    private function detect_mime_type_from_data($base64_data) {
-        $decoded = base64_decode(substr($base64_data, 0, 100), true);
-        if ($decoded === false) {
-            return 'image/jpeg';
-        }
-        
-        $header = substr($decoded, 0, 20);
-        
-        // Check file signatures
-        if (substr($header, 0, 3) === "\xFF\xD8\xFF") {
-            return 'image/jpeg';
-        } elseif (substr($header, 0, 8) === "\x89PNG\r\n\x1a\n") {
-            return 'image/png';
-        } elseif (substr($header, 0, 6) === "GIF87a" || substr($header, 0, 6) === "GIF89a") {
-            return 'image/gif';
-        } elseif (substr($header, 0, 4) === "RIFF" && substr($header, 8, 4) === "WEBP") {
-            return 'image/webp';
-        }
-        
-        return 'image/jpeg';
-    }
-    
-    /**
-     * Store chat history in database
-     */
-    private function store_chat_history($session_id, $message_type, $message, $image_data = null) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'sspu_ai_chat_history';
-        
-        // Create table if it doesn't exist
-        $this->maybe_create_chat_table();
-        
-        $wpdb->insert($table_name, [
-            'session_id' => $session_id,
-            'user_id' => get_current_user_id(),
-            'message_type' => $message_type,
-            'message' => $message,
-            'image_data' => $image_data,
-            'timestamp' => current_time('mysql')
-        ]);
-    }
-    
-    /**
-     * Create chat history table if needed
-     */
-    private function maybe_create_chat_table() {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'sspu_ai_chat_history';
-        
-        $charset_collate = $wpdb->get_charset_collate();
-        
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            session_id varchar(255) NOT NULL,
-            user_id bigint(20) NOT NULL,
-            message_type varchar(50) NOT NULL,
-            message longtext,
-            image_data longtext,
-            timestamp datetime DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY session_id (session_id),
-            KEY user_id (user_id)
-        ) $charset_collate;";
-        
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
-    }
-    
-    /**
-     * Get chat history for a session
-     */
-    public function handle_get_chat_history() {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        
-        $session_id = sanitize_text_field($_POST['session_id']);
-        
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'sspu_ai_chat_history';
-        
-        $history = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$table_name} 
-            WHERE session_id = %s 
-            ORDER BY timestamp ASC
-            LIMIT 100",
-            $session_id
-        ));
-        
-        wp_send_json_success(['history' => $history]);
-    }
-    
-    /**
-     * Save edited image to media library
-     */
-    public function handle_save_edited_image() {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        
-        if (!current_user_can('upload_files')) {
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-        
-        $image_data = $_POST['image_data'];
-        $filename = sanitize_file_name($_POST['filename'] ?? 'ai-edited-image');
-        
-        // Extract base64 data
-        $base64_data = $this->extract_base64_data($image_data);
-        if (empty($base64_data)) {
-            wp_send_json_error(['message' => 'Invalid image data']);
-            return;
-        }
-        
-        $data = base64_decode($base64_data);
-        if ($data === false) {
-            wp_send_json_error(['message' => 'Failed to decode image data']);
-            return;
-        }
-        
-        // Determine file extension from MIME type
-        $mime_type = $this->detect_mime_type($image_data);
-        $extension = 'jpg';
-        switch ($mime_type) {
-            case 'image/png':
-                $extension = 'png';
-                break;
-            case 'image/gif':
-                $extension = 'gif';
-                break;
-            case 'image/webp':
-                $extension = 'webp';
-                break;
-        }
-        
-        // Save to uploads directory
-        $upload_dir = wp_upload_dir();
-        $filename = $filename . '-' . time() . '.' . $extension;
-        $file_path = $upload_dir['path'] . '/' . $filename;
-        
-        if (!file_put_contents($file_path, $data)) {
-            wp_send_json_error(['message' => 'Failed to save image file']);
-            return;
-        }
-        
-        // Create attachment
-        $attachment = [
-            'post_mime_type' => $mime_type,
-            'post_title' => preg_replace('/\.[^.]+$/', '', $filename),
-            'post_content' => 'AI edited product image - extracted from original',
-            'post_status' => 'inherit'
-        ];
-        
-        $attachment_id = wp_insert_attachment($attachment, $file_path);
-        
-        if (is_wp_error($attachment_id)) {
-            wp_send_json_error(['message' => 'Failed to create media attachment']);
-            return;
-        }
-        
-        // Generate metadata
-        require_once(ABSPATH . 'wp-admin/includes/image.php');
-        $attach_data = wp_generate_attachment_metadata($attachment_id, $file_path);
-        wp_update_attachment_metadata($attachment_id, $attach_data);
-        
-        wp_send_json_success([
-            'attachment_id' => $attachment_id,
-            'url' => wp_get_attachment_url($attachment_id)
-        ]);
-    }
-    
-    /**
-     * Get available models for the current API keys
-     */
-    public function get_available_models() {
-        $available = [];
-        
-        // Check OpenAI models
-        if (!empty($this->openai_api_key)) {
-            $available['openai'] = [
-                'gpt-4o',
-                'gpt-4-turbo',
-                'dall-e-3'
-            ];
-        }
-        
-        // Check Gemini models
-        if (!empty($this->gemini_api_key)) {
-            $available['gemini'] = [
-                'gemini-2.0-flash-preview',
-                'gemini-2.0-flash-exp',
-                'gemini-1.5-pro',
-                'gemini-1.5-flash'
-            ];
-        }
-        
-        return $available;
-    }
-    
-    /**
-     * Test API connections
-     */
-    public function test_connections() {
-        $results = [];
-        
-        // Test OpenAI
-        if (!empty($this->openai_api_key)) {
-            $test_response = wp_remote_get('https://api.openai.com/v1/models', [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $this->openai_api_key
-                ],
-                'timeout' => 10
-            ]);
-            
-            $results['openai'] = !is_wp_error($test_response) && 
-                                wp_remote_retrieve_response_code($test_response) === 200;
-        }
-        
-        // Test Gemini
-        if (!empty($this->gemini_api_key)) {
-            $results['gemini'] = $this->test_gemini_connection();
-        }
-        
-        return $results;
-    }
-    
-    /**
-     * Test Gemini API connection
-     */
-    private function test_gemini_connection() {
-        if (empty($this->gemini_api_key)) {
-            return false;
-        }
-        
-        $api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" . $this->gemini_api_key;
-        
-        $test_request = [
-            'contents' => [
-                [
-                    'role' => 'user',
-                    'parts' => [
-                        ['text' => 'Test connection']
-                    ]
-                ]
-            ]
-        ];
-        
-        $response = wp_remote_post($api_url, [
-            'headers' => ['Content-Type' => 'application/json'],
-            'body' => json_encode($test_request),
-            'timeout' => 10
-        ]);
-        
-        if (is_wp_error($response)) {
-            return false;
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        return isset($data['candidates']) && !isset($data['error']);
-    }
-    
-    /**
-     * Get templates (placeholder for template functionality)
-     */
-    public function handle_get_templates() {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        
-        // This would fetch from database in full implementation
-        $templates = [
-            [
-                'id' => 1,
-                'name' => 'E-commerce White Background',
-                'content' => 'EXTRACT the existing product exactly as shown and place it on a pure white background with professional studio lighting and subtle shadow'
-            ],
-            [
-                'id' => 2,
-                'name' => 'Lifestyle Setting',
-                'content' => 'EXTRACT the product without modifications and place it in a modern, upscale lifestyle environment that matches the product category'
-            ],
-            [
-                'id' => 3,
-                'name' => 'Add Company Branding',
-                'content' => 'Keep the existing product image unchanged and add our company logo in the bottom right corner, keeping it subtle but visible'
-            ]
-        ];
-        
-        wp_send_json_success(['templates' => $templates]);
-    }
-    
-    /**
-     * Get single template content
-     */
-    public function handle_get_single_template() {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        
-        $template_id = intval($_POST['template_id']);
-        
-        // Mock data - replace with database query
-        $templates = [
-            1 => [
-                'name' => 'E-commerce White Background',
-                'content' => 'EXTRACT the existing product exactly as shown and place it on a pure white background with professional studio lighting and subtle shadow'
-            ],
-            2 => [
-                'name' => 'Lifestyle Setting',
-                'content' => 'EXTRACT the product without modifications and place it in a modern, upscale lifestyle environment that matches the product category'
-            ],
-            3 => [
-                'name' => 'Add Company Branding',
-                'content' => 'Keep the existing product image unchanged and add our company logo in the bottom right corner, keeping it subtle but visible'
-            ]
-        ];
-        
-        if (isset($templates[$template_id])) {
-            wp_send_json_success($templates[$template_id]);
-        } else {
-            wp_send_json_error(['message' => 'Template not found']);
-        }
-    }
+<?php
+/**
+ * SSPU AI Image Editor
+ *
+ * Handles AI-powered image editing functionality using OpenAI DALL-E and Google Gemini
+ * Updated to properly use Gemini 2.0 Flash Preview Image Generation model
+ *
+ * @package SSPU
+ * @since 2.28.0
+ */
+
+if (!defined('WPINC')) {
+    die;
 }
+
+class SSPU_AI_Image_Editor {
+    /**
+     * Singleton instance
+     */
+    private static $instance = null;
+
+    /**
+     * Last error message
+     */
+    private $last_error = '';
+
+    /**
+     * Available AI models - Updated with correct model name
+     */
+    private $available_models = [
+        'openai' => [
+            'dall-e-3' => [
+                'name' => 'DALL-E 3',
+                'supports_vision' => false,
+                'supports_generation' => true,
+                'description' => 'Advanced text-to-image generation'
+            ]
+        ],
+        'gemini' => [
+            'gemini-2.0-flash-preview-image-generation' => [
+                'name' => 'Gemini 2.0 Flash Preview (Image Generation)',
+                'supports_vision' => true,
+                'supports_generation' => true,
+                'description' => 'Fast multimodal model for image editing',
+                'api_model' => 'gemini-2.0-flash-preview-image-generation'
+            ],
+            'gemini-1.5-pro' => [
+                'name' => 'Gemini 1.5 Pro',
+                'supports_vision' => true,
+                'supports_generation' => false,
+                'description' => 'Advanced reasoning with vision'
+            ],
+            'gemini-1.5-flash' => [
+                'name' => 'Gemini 1.5 Flash',
+                'supports_vision' => true,
+                'supports_generation' => false,
+                'description' => 'Fast and efficient analysis'
+            ]
+        ],
+        'vertex' => [
+            'vertex-gemini-2.0' => [
+                'name' => 'Vertex AI Gemini 2.0',
+                'supports_vision' => true,
+                'supports_generation' => true,
+                'description' => 'Enterprise-grade Gemini via Vertex AI'
+            ]
+        ]
+    ];
+
+    /**
+     * Get singleton instance
+     */
+    public static function get_instance() {
+        if (null === self::$instance) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    /**
+     * Constructor
+     */
+    private function __construct() {
+        // Initialize hooks if needed
+    }
+
+    /**
+     * Handle AI edit request
+     */
+    public function handle_ai_edit() {
+        try {
+            check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+            if (!current_user_can('upload_shopify_products')) {
+                wp_send_json_error(['message' => 'Permission denied']);
+                return;
+            }
+
+            $image_data = isset($_POST['image_data']) ? $_POST['image_data'] : '';
+            $prompt = sanitize_textarea_field($_POST['prompt']);
+            $model = sanitize_text_field($_POST['model']);
+            $session_id = sanitize_text_field($_POST['session_id']);
+
+            if (empty($image_data) || empty($prompt)) {
+                wp_send_json_error(['message' => 'Image and prompt are required']);
+                return;
+            }
+
+            // Log the request
+            error_log('[SSPU AI Editor] Processing request with model: ' . $model);
+
+            // Process based on model provider
+            if (strpos($model, 'dall-e') !== false) {
+                $result = $this->process_dalle_request($image_data, $prompt);
+            } elseif (strpos($model, 'gemini') !== false || strpos($model, 'vertex') !== false) {
+                $result = $this->process_gemini_request($image_data, $prompt, $model);
+            } else {
+                wp_send_json_error(['message' => 'Unsupported model: ' . $model]);
+                return;
+            }
+
+            if ($result['success']) {
+                // Log activity
+                if (class_exists('SSPU_Analytics')) {
+                    $analytics = new SSPU_Analytics();
+                    $analytics->log_activity(get_current_user_id(), 'ai_image_edited', [
+                        'model' => $model,
+                        'session_id' => $session_id
+                    ]);
+                }
+
+                wp_send_json_success([
+                    'edited_image' => $result['image'],
+                    'response' => $result['message']
+                ]);
+            } else {
+                wp_send_json_error(['message' => $result['error']]);
+            }
+
+        } catch (Exception $e) {
+            error_log('[SSPU AI Editor] Exception: ' . $e->getMessage());
+            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Process DALL-E request
+     */
+    private function process_dalle_request($image_data, $prompt) {
+        $api_key = get_option('sspu_openai_api_key');
+        if (empty($api_key)) {
+            return ['success' => false, 'error' => 'OpenAI API key not configured'];
+        }
+
+        try {
+            // For DALL-E 3, we need to generate from text only
+            $response = wp_remote_post('https://api.openai.com/v1/images/generations', [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $api_key,
+                    'Content-Type' => 'application/json',
+                ],
+                'body' => json_encode([
+                    'model' => 'dall-e-3',
+                    'prompt' => $prompt,
+                    'n' => 1,
+                    'size' => '1024x1024',
+                    'quality' => 'standard',
+                    'response_format' => 'b64_json'
+                ]),
+                'timeout' => 60
+            ]);
+
+            if (is_wp_error($response)) {
+                return ['success' => false, 'error' => $response->get_error_message()];
+            }
+
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+
+            if (isset($body['error'])) {
+                return ['success' => false, 'error' => $body['error']['message']];
+            }
+
+            if (isset($body['data'][0]['b64_json'])) {
+                return [
+                    'success' => true,
+                    'image' => 'data:image/png;base64,' . $body['data'][0]['b64_json'],
+                    'message' => 'Image generated successfully with DALL-E 3'
+                ];
+            }
+
+            return ['success' => false, 'error' => 'Unexpected response format'];
+
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Process Gemini request - Updated to match working example
+     */
+    private function process_gemini_request($image_data, $prompt, $model) {
+        $api_key = get_option('sspu_gemini_api_key');
+        if (empty($api_key)) {
+            return ['success' => false, 'error' => 'Gemini API key not configured'];
+        }
+
+        try {
+            // Extract base64 data from data URI
+            $base64_parts = explode(',', $image_data, 2);
+            $base64_data = isset($base64_parts[1]) ? $base64_parts[1] : $base64_parts[0];
+
+            // Log image size
+            $image_size_bytes = strlen(base64_decode($base64_data));
+            $image_size_mb = round($image_size_bytes / 1024 / 1024, 2);
+            error_log('[SSPU AI Editor] Image size: ' . $image_size_mb . ' MB');
+
+            // Get the correct model name
+            $api_model = 'gemini-2.0-flash-preview-image-generation';
+            if (isset($this->available_models['gemini'][$model]['api_model'])) {
+                $api_model = $this->available_models['gemini'][$model]['api_model'];
+            }
+
+            // Build API URL
+            $api_url = "https://generativelanguage.googleapis.com/v1beta/models/{$api_model}:generateContent?key=" . $api_key;
+
+            // Build request payload matching the working example
+            $request_body = [
+                'contents' => [
+                    [
+                        'role' => 'user',
+                        'parts' => [
+                            [
+                                'inline_data' => [
+                                    'mime_type' => 'image/jpeg',
+                                    'data' => $base64_data
+                                ]
+                            ],
+                            [
+                                'text' => $prompt
+                            ]
+                        ]
+                    ]
+                ],
+                'generation_config' => [
+                    'temperature' => 1.0,
+                    'top_p' => 0.95,
+                    'candidate_count' => 1,
+                    'max_output_tokens' => 8192,
+                    'response_modalities' => ['IMAGE', 'TEXT']  // Critical for image generation!
+                ]
+            ];
+
+            // Log the request
+            error_log('[SSPU AI Editor] API URL: ' . str_replace($api_key, 'HIDDEN', $api_url));
+            error_log('[SSPU AI Editor] Request prompt: ' . $prompt);
+            error_log('[SSPU AI Editor] Generation config: ' . json_encode($request_body['generation_config'], JSON_PRETTY_PRINT));
+
+            // Make the API request
+            $response = wp_remote_post($api_url, [
+                'headers' => [
+                    'Content-Type' => 'application/json'
+                ],
+                'body' => json_encode($request_body),
+                'timeout' => 180
+            ]);
+
+            if (is_wp_error($response)) {
+                $error = 'Network error: ' . $response->get_error_message();
+                error_log('[SSPU AI Editor] Network Error: ' . $error);
+                return ['success' => false, 'error' => $error];
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            $response_body = wp_remote_retrieve_body($response);
+            $body = json_decode($response_body, true);
+
+            // Log response
+            error_log('[SSPU AI Editor] Response Code: ' . $response_code);
+
+            if (isset($body['error'])) {
+                $error_message = 'API Error: ' . $body['error']['message'];
+                if (isset($body['error']['details'])) {
+                    $error_message .= ' Details: ' . json_encode($body['error']['details']);
+                }
+                error_log('[SSPU AI Editor] API Error Details: ' . json_encode($body['error'], JSON_PRETTY_PRINT));
+                return ['success' => false, 'error' => $error_message];
+            }
+
+            // Check for generated image in response
+            if (isset($body['candidates'][0]['content']['parts'])) {
+                $generated_image = null;
+                $generated_text = '';
+
+                error_log('[SSPU AI Editor] Number of parts in response: ' . count($body['candidates'][0]['content']['parts']));
+
+                foreach ($body['candidates'][0]['content']['parts'] as $index => $part) {
+                    error_log('[SSPU AI Editor] Part ' . $index . ' type: ' . json_encode(array_keys($part)));
+
+                    // Check for both snake_case and camelCase formats (matching example plugin)
+                    if (isset($part['inline_data']['data']) || isset($part['inlineData']['data'])) {
+                        if (isset($part['inline_data'])) {
+                            $generated_image = 'data:' . $part['inline_data']['mime_type'] . ';base64,' . $part['inline_data']['data'];
+                            error_log('[SSPU AI Editor] Found image in part ' . $index . ', mime type: ' . $part['inline_data']['mime_type']);
+                        } else {
+                            // Handle camelCase format
+                            $generated_image = 'data:' . $part['inlineData']['mimeType'] . ';base64,' . $part['inlineData']['data'];
+                            error_log('[SSPU AI Editor] Found image in part ' . $index . ', mime type: ' . $part['inlineData']['mimeType']);
+                        }
+                    }
+
+                    if (isset($part['text'])) {
+                        $generated_text .= $part['text'] . ' ';
+                        error_log('[SSPU AI Editor] Found text in part ' . $index . ': ' . substr($part['text'], 0, 100) . '...');
+                    }
+                }
+
+                if ($generated_image) {
+                    error_log('[SSPU AI Editor] SUCCESS: Image generated');
+                    return [
+                        'success' => true,
+                        'image' => $generated_image,
+                        'message' => !empty(trim($generated_text)) ? trim($generated_text) : 'Image processed successfully with Gemini'
+                    ];
+                }
+
+                // If we have text but no image
+                if (!empty($generated_text)) {
+                    error_log('[SSPU AI Editor] FAIL: Only text returned, no image');
+                    return [
+                        'success' => false,
+                        'error' => 'Model returned text instead of image. Please ensure you are using the image generation model.'
+                    ];
+                }
+            }
+
+            error_log('[SSPU AI Editor] FAIL: No valid content in response');
+            return [
+                'success' => false,
+                'error' => 'No image generated. The model may not support image generation for this type of request.'
+            ];
+
+        } catch (Exception $e) {
+            error_log('[SSPU AI Editor] Exception in process_gemini_request: ' . $e->getMessage());
+            return ['success' => false, 'error' => 'Exception: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Handle smart rotate
+     */
+    public function handle_smart_rotate() {
+        try {
+            check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+            if (!current_user_can('upload_shopify_products')) {
+                wp_send_json_error(['message' => 'Permission denied']);
+                return;
+            }
+
+            $image_data = isset($_POST['image_data']) ? $_POST['image_data'] : '';
+
+            if (empty($image_data)) {
+                wp_send_json_error(['message' => 'Image data is required']);
+                return;
+            }
+
+            // Use Gemini 2.0 Flash Preview Image Generation for smart rotate
+$prompt = "Extract the main product and create a professional e-commerce image:\n\n" .
+         "SPECS:\n" .
+         "• Pure white background (#FFFFFF)\n" .
+         "• Center product perfectly at 0° angle (no tilt/rotation)\n" .
+         "• Product fills 80% of image area with 10% margins all sides\n" .
+         "• Subtle drop shadow: 15% opacity, soft blur, directly below\n" .
+         "• Even studio lighting, maintain original colors\n" .
+         "• Sharp focus, clean edges, no background remnants\n\n" .
+         "CRITICAL: Output must be identical each time - same size, position, margins, and shadow for consistent results.";
+
+            $result = $this->process_gemini_request($image_data, $prompt, 'gemini-2.0-flash-preview-image-generation');
+
+            if ($result['success']) {
+                wp_send_json_success([
+                    'edited_image' => $result['image'],
+                    'response' => 'Smart rotate applied successfully'
+                ]);
+            } else {
+                wp_send_json_error(['message' => $result['error']]);
+            }
+
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Handle mimic style
+     */
+    public function handle_mimic_style() {
+        try {
+            check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+            if (!current_user_can('upload_shopify_products')) {
+                wp_send_json_error(['message' => 'Permission denied']);
+                return;
+            }
+
+            $source_image_data = isset($_POST['source_image_data']) ? $_POST['source_image_data'] : '';
+            $reference_image_id = absint($_POST['reference_image_id']);
+            $custom_prompt = sanitize_textarea_field($_POST['custom_prompt']);
+            $session_id = sanitize_text_field($_POST['session_id']);
+
+            if (empty($source_image_data) || !$reference_image_id) {
+                wp_send_json_error(['message' => 'Source image and reference image are required']);
+                return;
+            }
+
+            // Get reference image
+            $reference_url = wp_get_attachment_url($reference_image_id);
+            if (!$reference_url) {
+                wp_send_json_error(['message' => 'Reference image not found']);
+                return;
+            }
+
+            // Convert reference image to base64
+            $reference_base64 = $this->url_to_base64($reference_url);
+            if (!$reference_base64) {
+                wp_send_json_error(['message' => 'Failed to process reference image']);
+                return;
+            }
+
+            // Build mimic prompt
+            $prompt = "You are looking at two images:\n";
+            $prompt .= "1. A reference image showing the desired style, background, and composition\n";
+            $prompt .= "2. A source image containing the product to be styled\n\n";
+            $prompt .= "Your task: Extract the product from the source image and apply the EXACT style, lighting, background, and composition from the reference image.\n";
+            $prompt .= "Maintain all product details while matching the reference style perfectly.\n";
+
+            if (!empty($custom_prompt)) {
+                $prompt .= "\nAdditional instructions: " . $custom_prompt;
+            }
+
+            // Process with Gemini using two images
+            $result = $this->process_mimic_request($source_image_data, $reference_base64, $prompt);
+
+            if ($result['success']) {
+                // Update mimic usage count
+                $usage_count = intval(get_post_meta($reference_image_id, '_sspu_mimic_usage_count', true));
+                update_post_meta($reference_image_id, '_sspu_mimic_usage_count', $usage_count + 1);
+
+                wp_send_json_success([
+                    'edited_image' => $result['image'],
+                    'response' => 'Style successfully mimicked from reference image'
+                ]);
+            } else {
+                wp_send_json_error(['message' => $result['error']]);
+            }
+
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Handle mimic all variants with enhanced debugging - UPDATED TO HANDLE BOTH FORMATS
+     */
+    public function handle_mimic_all_variants() {
+        try {
+            // Enhanced debug logging
+            error_log('[SSPU Mimic All] ===== START MIMIC ALL VARIANTS =====');
+            error_log('[SSPU Mimic All] POST data keys: ' . implode(', ', array_keys($_POST)));
+            
+            check_ajax_referer('sspu_ajax_nonce', 'nonce');
+            
+            if (!current_user_can('upload_shopify_products')) {
+                error_log('[SSPU Mimic All] Permission denied for user ID: ' . get_current_user_id());
+                wp_send_json_error(['message' => 'Permission denied']);
+                return;
+            }
+            
+            // Check which format we're receiving
+            if (isset($_POST['first_variant_image']) && isset($_POST['other_variant_images'])) {
+                // New format from a different UI
+                error_log('[SSPU Mimic All] Using new format with first_variant_image and other_variant_images');
+                $this->handle_mimic_all_new_format();
+                return;
+            }
+            
+            // Original format handling
+            error_log('[SSPU Mimic All] Using original format with source_variant_index and variants_data');
+            
+            // Get and validate source variant index
+            $source_variant_index = isset($_POST['source_variant_index']) ? intval($_POST['source_variant_index']) : -1;
+            error_log('[SSPU Mimic All] Source variant index: ' . $source_variant_index);
+            
+            if ($source_variant_index < 0) {
+                error_log('[SSPU Mimic All] Invalid source variant index');
+                wp_send_json_error(['message' => 'Invalid source variant index']);
+                return;
+            }
+            
+            // Get variants data
+            $variants_data_json = isset($_POST['variants_data']) ? $_POST['variants_data'] : '';
+            error_log('[SSPU Mimic All] Variants data JSON length: ' . strlen($variants_data_json));
+            
+            if (empty($variants_data_json)) {
+                error_log('[SSPU Mimic All] Empty variants data');
+                wp_send_json_error(['message' => 'No variants data provided']);
+                return;
+            }
+            
+            // Try to decode JSON with error handling
+            $variants_data = json_decode(stripslashes($variants_data_json), true);
+            $json_error = json_last_error();
+            
+            if ($json_error !== JSON_ERROR_NONE) {
+                error_log('[SSPU Mimic All] JSON decode error: ' . json_last_error_msg());
+                error_log('[SSPU Mimic All] First 200 chars of JSON: ' . substr($variants_data_json, 0, 200));
+                wp_send_json_error(['message' => 'Invalid JSON data: ' . json_last_error_msg()]);
+                return;
+            }
+            
+            error_log('[SSPU Mimic All] Decoded variants count: ' . (is_array($variants_data) ? count($variants_data) : 'NOT AN ARRAY'));
+            
+            if (!is_array($variants_data)) {
+                error_log('[SSPU Mimic All] Variants data is not an array. Type: ' . gettype($variants_data));
+                wp_send_json_error(['message' => 'Variants data must be an array']);
+                return;
+            }
+            
+            if (empty($variants_data)) {
+                error_log('[SSPU Mimic All] Variants array is empty');
+                wp_send_json_error(['message' => 'No variants found in data']);
+                return;
+            }
+            
+            // Log each variant's structure
+            foreach ($variants_data as $index => $variant) {
+                error_log('[SSPU Mimic All] Variant ' . $index . ' structure: ' . json_encode($variant));
+            }
+
+            // Get the source variant
+            if (!isset($variants_data[$source_variant_index])) {
+                error_log('[SSPU Mimic All] Error: Source variant not found at index ' . $source_variant_index);
+                wp_send_json_error(['message' => 'Source variant not found']);
+                return;
+            }
+
+            $source_variant = $variants_data[$source_variant_index];
+            $source_image_id = isset($source_variant['image_id']) ? intval($source_variant['image_id']) : 0;
+
+            error_log('[SSPU Mimic All] Source image ID: ' . $source_image_id);
+
+            if (!$source_image_id) {
+                error_log('[SSPU Mimic All] Error: Source variant has no image');
+                wp_send_json_error(['message' => 'Source variant has no image']);
+                return;
+            }
+
+            // Get source image URL and validate it exists
+            $source_image_url = wp_get_attachment_url($source_image_id);
+            if (!$source_image_url) {
+                error_log('[SSPU Mimic All] Error: Could not get source image URL for ID ' . $source_image_id);
+                wp_send_json_error(['message' => 'Could not get source image URL']);
+                return;
+            }
+
+            error_log('[SSPU Mimic All] Source image URL: ' . $source_image_url);
+
+            // Initialize results array
+            $results = [];
+            $processed_count = 0;
+            $failed_count = 0;
+            $skipped_count = 0;
+
+            // Rate limiting setup
+            $rate_limit_delay = 2; // 2 seconds between requests
+            $max_batch_size = 10; // Process maximum 10 variants at once
+
+            error_log('[SSPU Mimic All] Processing variants with rate limit of ' . $rate_limit_delay . ' seconds');
+
+            // Process each variant (except the source)
+            foreach ($variants_data as $index => $variant) {
+                // Skip the source variant
+                if ($index === $source_variant_index) {
+                    error_log('[SSPU Mimic All] Skipping source variant at index ' . $index);
+                    $skipped_count++;
+                    continue;
+                }
+
+                // Check if we've hit the batch limit
+                if ($processed_count >= $max_batch_size) {
+                    error_log('[SSPU Mimic All] Reached batch limit of ' . $max_batch_size);
+                    break;
+                }
+
+                $target_image_id = isset($variant['image_id']) ? intval($variant['image_id']) : 0;
+
+                // Skip variants without images
+                if (!$target_image_id) {
+                    error_log('[SSPU Mimic All] Skipping variant at index ' . $index . ' - no image');
+                    $skipped_count++;
+                    continue;
+                }
+
+                // Get target image URL
+                $target_image_url = wp_get_attachment_url($target_image_id);
+                if (!$target_image_url) {
+                    error_log('[SSPU Mimic All] Failed to get URL for image ID ' . $target_image_id);
+                    $failed_count++;
+                    continue;
+                }
+
+                error_log('[SSPU Mimic All] Processing variant ' . $index . ' with image ID ' . $target_image_id);
+
+                // Apply rate limiting (except for first request)
+                if ($processed_count > 0) {
+                    error_log('[SSPU Mimic All] Rate limiting - sleeping for ' . $rate_limit_delay . ' seconds');
+                    sleep($rate_limit_delay);
+                }
+
+                try {
+                    // Build the mimic prompt
+                    $variant_name = isset($variant['option_value']) ? $variant['option_value'] : 'Variant ' . $index;
+                    $prompt = $this->build_mimic_prompt($source_variant, $variant, $variant_name);
+
+                    error_log('[SSPU Mimic All] Generated prompt: ' . substr($prompt, 0, 200) . '...');
+
+                    // Convert URLs to base64
+                    $target_base64 = $this->url_to_base64($target_image_url);
+                    $reference_base64 = $this->url_to_base64($source_image_url);
+
+                    if (!$target_base64 || !$reference_base64) {
+                        throw new Exception('Failed to convert images to base64');
+                    }
+
+                    // Call process_mimic_request with base64 images
+                    $result = $this->process_mimic_request($target_base64, $reference_base64, $prompt);
+
+                    if ($result && isset($result['image'])) {
+                        // Save the new image
+                        $new_attachment_id = $this->save_generated_image(
+                            $result['image'],
+                            'variant-' . sanitize_title($variant_name) . '-mimicked'
+                        );
+
+                        if ($new_attachment_id) {
+                            $results[] = [
+                                'index' => $index,
+                                'success' => true,
+                                'new_image_id' => $new_attachment_id,
+                                'new_image_url' => wp_get_attachment_url($new_attachment_id),
+                                'variant_name' => $variant_name
+                            ];
+                            $processed_count++;
+                            error_log('[SSPU Mimic All] Successfully processed variant ' . $index);
+                        } else {
+                            $results[] = [
+                                'index' => $index,
+                                'success' => false,
+                                'error' => 'Failed to save generated image',
+                                'variant_name' => $variant_name
+                            ];
+                            $failed_count++;
+                            error_log('[SSPU Mimic All] Failed to save image for variant ' . $index);
+                        }
+                    } else {
+                        $error_msg = isset($result['error']) ? $result['error'] : 'Unknown error';
+                        $results[] = [
+                            'index' => $index,
+                            'success' => false,
+                            'error' => 'API request failed: ' . $error_msg,
+                            'variant_name' => $variant_name
+                        ];
+                        $failed_count++;
+                        error_log('[SSPU Mimic All] API request failed for variant ' . $index . ': ' . $error_msg);
+                    }
+                } catch (Exception $e) {
+                    $results[] = [
+                        'index' => $index,
+                        'success' => false,
+                        'error' => 'Exception: ' . $e->getMessage(),
+                        'variant_name' => $variant_name
+                    ];
+                    $failed_count++;
+                    error_log('[SSPU Mimic All] Exception for variant ' . $index . ': ' . $e->getMessage());
+                }
+            }
+
+            // Log final results
+            error_log('[SSPU Mimic All] Process complete. Processed: ' . $processed_count . ', Failed: ' . $failed_count . ', Skipped: ' . $skipped_count);
+            error_log('[SSPU Mimic All] ===== END MIMIC ALL VARIANTS =====');
+
+            // Return results
+            if ($processed_count > 0) {
+                wp_send_json_success([
+                    'message' => sprintf(
+                        'Mimic process complete. Successfully processed %d variants, %d failed, %d skipped.',
+                        $processed_count,
+                        $failed_count,
+                        $skipped_count
+                    ),
+                    'results' => $results,
+                    'stats' => [
+                        'processed' => $processed_count,
+                        'failed' => $failed_count,
+                        'skipped' => $skipped_count,
+                        'total' => count($variants_data)
+                    ]
+                ]);
+            } else {
+                wp_send_json_error([
+                    'message' => 'Failed to process any variants. Check the error log for details.',
+                    'results' => $results,
+                    'stats' => [
+                        'processed' => $processed_count,
+                        'failed' => $failed_count,
+                        'skipped' => $skipped_count,
+                        'total' => count($variants_data)
+                    ]
+                ]);
+            }
+
+        } catch (Exception $e) {
+            error_log('[SSPU Mimic All] Fatal error: ' . $e->getMessage());
+            error_log('[SSPU Mimic All] Stack trace: ' . $e->getTraceAsString());
+            wp_send_json_error([
+                'message' => 'Fatal error: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Handle the new format of mimic all variants
+     */
+    private function handle_mimic_all_new_format() {
+        try {
+            error_log('[SSPU Mimic All New Format] Processing with new format');
+            
+            $first_variant_image = isset($_POST['first_variant_image']) ? intval($_POST['first_variant_image']) : 0;
+            $other_variant_images = isset($_POST['other_variant_images']) ? $_POST['other_variant_images'] : [];
+            $model = isset($_POST['model']) ? sanitize_text_field($_POST['model']) : 'gemini-2.0-flash-preview-image-generation';
+            $additional_instructions = isset($_POST['additional_instructions']) ? sanitize_textarea_field($_POST['additional_instructions']) : '';
+            
+            error_log('[SSPU Mimic All New Format] First variant image ID: ' . $first_variant_image);
+            error_log('[SSPU Mimic All New Format] Other variant images: ' . json_encode($other_variant_images));
+            
+            if (!$first_variant_image) {
+                error_log('[SSPU Mimic All New Format] No first variant image provided, attempting to find from variants');
+                
+                // Try to find the first variant with an image
+                // This is a fallback for when the JS doesn't properly send the image ID
+                wp_send_json_error(['message' => 'No reference image provided. Please ensure the first variant has an edited image.']);
+                return;
+            }
+            
+            if (empty($other_variant_images)) {
+                wp_send_json_error(['message' => 'No target images provided']);
+                return;
+            }
+            
+            // Get reference image URL
+            $reference_url = wp_get_attachment_url($first_variant_image);
+            if (!$reference_url) {
+                wp_send_json_error(['message' => 'Could not get reference image URL']);
+                return;
+            }
+            
+            // Initialize results
+            $results = [];
+            $processed_count = 0;
+            $failed_count = 0;
+            
+            // Process each target image
+            foreach ($other_variant_images as $index => $target_image_id) {
+                $target_image_id = intval($target_image_id);
+                if (!$target_image_id) {
+                    $failed_count++;
+                    continue;
+                }
+                
+                $target_url = wp_get_attachment_url($target_image_id);
+                if (!$target_url) {
+                    $failed_count++;
+                    continue;
+                }
+                
+                // Rate limiting
+                if ($processed_count > 0) {
+                    sleep(2);
+                }
+                
+                try {
+                    // Build prompt
+                    $prompt = "You are looking at two product images:\n";
+                    $prompt .= "1. REFERENCE IMAGE: A professionally edited product photo with the desired style\n";
+                    $prompt .= "2. TARGET IMAGE: A product that needs to match the reference style\n\n";
+                    $prompt .= "Extract the product from the target image and apply the EXACT style, lighting, background, and composition from the reference image.\n";
+                    $prompt .= "Maintain all product details while matching the reference style perfectly.\n";
+                    
+                    if (!empty($additional_instructions)) {
+                        $prompt .= "\nAdditional instructions: " . $additional_instructions;
+                    }
+                    
+                    // Convert to base64
+                    $target_base64 = $this->url_to_base64($target_url);
+                    $reference_base64 = $this->url_to_base64($reference_url);
+                    
+                    if (!$target_base64 || !$reference_base64) {
+                        throw new Exception('Failed to convert images to base64');
+                    }
+                    
+                    // Process with Gemini
+                    $result = $this->process_mimic_request($target_base64, $reference_base64, $prompt);
+                    
+                    if ($result && isset($result['image'])) {
+                        // Save the new image
+                        $new_attachment_id = $this->save_generated_image(
+                            $result['image'],
+                            'variant-mimicked-' . time() . '-' . $index
+                        );
+                        
+                        if ($new_attachment_id) {
+                            $results[] = [
+                                'original_id' => $target_image_id,
+                                'new_image_id' => $new_attachment_id,
+                                'new_image_url' => wp_get_attachment_url($new_attachment_id),
+                                'success' => true
+                            ];
+                            $processed_count++;
+                        } else {
+                            $results[] = [
+                                'original_id' => $target_image_id,
+                                'success' => false,
+                                'error' => 'Failed to save generated image'
+                            ];
+                            $failed_count++;
+                        }
+                    } else {
+                        $results[] = [
+                            'original_id' => $target_image_id,
+                            'success' => false,
+                            'error' => isset($result['error']) ? $result['error'] : 'Unknown error'
+                        ];
+                        $failed_count++;
+                    }
+                } catch (Exception $e) {
+                    $results[] = [
+                        'original_id' => $target_image_id,
+                        'success' => false,
+                        'error' => $e->getMessage()
+                    ];
+                    $failed_count++;
+                }
+            }
+            
+            error_log('[SSPU Mimic All New Format] Process complete. Processed: ' . $processed_count . ', Failed: ' . $failed_count);
+            
+            if ($processed_count > 0) {
+                wp_send_json_success([
+                    'message' => sprintf('Successfully processed %d images, %d failed.', $processed_count, $failed_count),
+                    'results' => $results,
+                    'processed' => $processed_count,
+                    'failed' => $failed_count
+                ]);
+            } else {
+                wp_send_json_error([
+                    'message' => 'Failed to process any images',
+                    'results' => $results
+                ]);
+            }
+            
+        } catch (Exception $e) {
+            error_log('[SSPU Mimic All New Format] Exception: ' . $e->getMessage());
+            wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Process mimic request with two images - Updated to use correct Gemini API format
+     */
+    private function process_mimic_request($target_image_base64, $reference_image_base64, $prompt) {
+        try {
+            $api_key = get_option('sspu_gemini_api_key');
+            if (empty($api_key)) {
+                return ['success' => false, 'error' => 'Gemini API key not configured'];
+            }
+
+            // Extract base64 data from both images
+            $target_parts = explode(',', $target_image_base64, 2);
+            $target_data = isset($target_parts[1]) ? $target_parts[1] : $target_parts[0];
+
+            $reference_parts = explode(',', $reference_image_base64, 2);
+            $reference_data = isset($reference_parts[1]) ? $reference_parts[1] : $reference_parts[0];
+
+            // Use the correct model name
+            $api_model = 'gemini-2.0-flash-preview-image-generation';
+            $api_url = "https://generativelanguage.googleapis.com/v1beta/models/{$api_model}:generateContent?key=" . $api_key;
+
+            // Build request payload with both images
+            $request_body = [
+                'contents' => [
+                    [
+                        'role' => 'user',
+                        'parts' => [
+                            [
+                                'inline_data' => [
+                                    'mime_type' => 'image/jpeg',
+                                    'data' => $reference_data
+                                ]
+                            ],
+                            [
+                                'inline_data' => [
+                                    'mime_type' => 'image/jpeg',
+                                    'data' => $target_data
+                                ]
+                            ],
+                            [
+                                'text' => $prompt
+                            ]
+                        ]
+                    ]
+                ],
+                'generation_config' => [
+                    'temperature' => 1.0,
+                    'top_p' => 0.95,
+                    'candidate_count' => 1,
+                    'max_output_tokens' => 8192,
+                    'response_modalities' => ['IMAGE', 'TEXT']  // Critical!
+                ]
+            ];
+
+            error_log('[SSPU Mimic Request] API URL: ' . str_replace($api_key, 'HIDDEN', $api_url));
+            error_log('[SSPU Mimic Request] Sending request with 2 images and prompt');
+
+            $response = wp_remote_post($api_url, [
+                'headers' => [
+                    'Content-Type' => 'application/json'
+                ],
+                'body' => json_encode($request_body),
+                'timeout' => 180
+            ]);
+
+            if (is_wp_error($response)) {
+                return ['success' => false, 'error' => 'Network error: ' . $response->get_error_message()];
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+
+            if (isset($body['error'])) {
+                return ['success' => false, 'error' => 'API Error: ' . $body['error']['message']];
+            }
+
+            // Parse response for generated image
+            if (isset($body['candidates'][0]['content']['parts'])) {
+                foreach ($body['candidates'][0]['content']['parts'] as $part) {
+                    // Check for both formats
+                    if (isset($part['inline_data']['data']) || isset($part['inlineData']['data'])) {
+                        if (isset($part['inline_data'])) {
+                            $generated_image = 'data:' . $part['inline_data']['mime_type'] . ';base64,' . $part['inline_data']['data'];
+                        } else {
+                            $generated_image = 'data:' . $part['inlineData']['mimeType'] . ';base64,' . $part['inlineData']['data'];
+                        }
+
+                        error_log('[SSPU Mimic Request] SUCCESS: Image generated');
+                        return [
+                            'success' => true,
+                            'image' => $generated_image
+                        ];
+                    }
+                }
+            }
+
+            return ['success' => false, 'error' => 'No image generated in response'];
+
+        } catch (Exception $e) {
+            error_log('[SSPU Mimic Request] Exception: ' . $e->getMessage());
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Build the mimic prompt for a specific variant
+     */
+    /**
+ * Build the mimic prompt for a specific variant - ENHANCED VERSION
+ */
+private function build_mimic_prompt($source_variant, $target_variant, $variant_name) {
+    $source_name = isset($source_variant['option_value']) ? $source_variant['option_value'] : 'source';
+    $target_color = isset($target_variant['option_value']) ? $target_variant['option_value'] : $variant_name;
+
+    $prompt = "CRITICAL TASK: You are looking at two images of the EXACT SAME PRODUCT MODEL in different colors.\n\n";
+    
+    $prompt .= "IMAGE 1 (REFERENCE): The '{$source_name}' colored variant - professionally edited with perfect styling\n";
+    $prompt .= "IMAGE 2 (TARGET): The '{$target_color}' colored variant - needs the exact same styling applied\n\n";
+    
+    $prompt .= "YOUR PRECISE INSTRUCTIONS:\n";
+    $prompt .= "1. IDENTIFY the exact product in both images - they are the SAME product model, just different colors\n";
+    $prompt .= "2. EXTRACT the product from the target image (Image 2)\n";
+    $prompt .= "3. RECREATE the EXACT scene from the reference image but with the target product:\n";
+    $prompt .= "   • EXACT same product size (no scaling changes)\n";
+    $prompt .= "   • EXACT same product position (pixel-perfect placement)\n";
+    $prompt .= "   • EXACT same product angle and rotation\n";
+    $prompt .= "   • EXACT same background (every detail must match)\n";
+    $prompt .= "   • EXACT same lighting (direction, intensity, reflections)\n";
+    $prompt .= "   • EXACT same shadows (size, opacity, blur, position)\n";
+    $prompt .= "   • EXACT same composition and framing\n";
+    $prompt .= "   • EXACT same depth of field and focus\n\n";
+    
+    $prompt .= "4. CRITICAL COLOR RULE:\n";
+    $prompt .= "   • The ONLY difference should be the product's color\n";
+    $prompt .= "   • PRESERVE the target product's original color ('{$target_color}')\n";
+    $prompt .= "   • Do NOT change the product color to match the reference\n";
+    $prompt .= "   • The '{$target_color}' color must remain exactly as shown in the target image\n\n";
+    
+    $prompt .= "5. QUALITY REQUIREMENTS:\n";
+    $prompt .= "   • The final image must look IDENTICAL to the reference except for product color\n";
+    $prompt .= "   • Both images must appear to be from the same professional photoshoot\n";
+    $prompt .= "   • Maintain the same image dimensions and aspect ratio\n";
+    $prompt .= "   • Ensure edge quality and anti-aliasing matches the reference\n\n";
+    
+    $prompt .= "SUMMARY: Create an exact replica of the reference image's composition, but featuring the target product with its original '{$target_color}' color intact.";
+
+    return $prompt;
+}
+
+    /**
+     * Convert URL to base64
+     */
+    private function url_to_base64($url) {
+        try {
+            $response = wp_remote_get($url, ['timeout' => 30]);
+
+            if (is_wp_error($response)) {
+                error_log('[SSPU] Failed to fetch image from URL: ' . $url . ' - Error: ' . $response->get_error_message());
+                return false;
+            }
+
+            $image_data = wp_remote_retrieve_body($response);
+            $mime_type = wp_remote_retrieve_header($response, 'content-type');
+
+            if (empty($mime_type)) {
+                $mime_type = 'image/jpeg'; // Default fallback
+            }
+
+            return 'data:' . $mime_type . ';base64,' . base64_encode($image_data);
+
+        } catch (Exception $e) {
+            error_log('[SSPU] Exception in url_to_base64: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Save generated image
+     */
+    private function save_generated_image($image_data_or_url, $filename) {
+        try {
+            require_once(ABSPATH . 'wp-admin/includes/media.php');
+            require_once(ABSPATH . 'wp-admin/includes/file.php');
+            require_once(ABSPATH . 'wp-admin/includes/image.php');
+
+            // Check if it's a data URI or URL
+            if (strpos($image_data_or_url, 'data:') === 0) {
+                // It's a data URI
+                $data = explode(',', $image_data_or_url);
+                $image_data = base64_decode($data[1]);
+
+                // Determine file extension from mime type
+                $mime_info = explode(';', $data[0]);
+                $mime_type = str_replace('data:', '', $mime_info[0]);
+                $extension = 'jpg'; // Default
+
+                if ($mime_type === 'image/png') {
+                    $extension = 'png';
+                } elseif ($mime_type === 'image/gif') {
+                    $extension = 'gif';
+                } elseif ($mime_type === 'image/webp') {
+                    $extension = 'webp';
+                }
+            } else {
+                // It's a URL - download it
+                $tmp = download_url($image_data_or_url);
+                if (is_wp_error($tmp)) {
+                    error_log('[SSPU] Failed to download image: ' . $tmp->get_error_message());
+                    return false;
+                }
+
+                $image_data = file_get_contents($tmp);
+                @unlink($tmp);
+                $extension = 'jpg'; // Default
+            }
+
+            // Create a temporary file
+            $upload_dir = wp_upload_dir();
+            $filename = sanitize_file_name($filename . '.' . $extension);
+            $file_path = $upload_dir['path'] . '/' . $filename;
+
+            // Save the image data to file
+            $saved = file_put_contents($file_path, $image_data);
+            if ($saved === false) {
+                error_log('[SSPU] Failed to save image to file: ' . $file_path);
+                return false;
+            }
+
+            // Create attachment
+            $attachment = array(
+                'post_mime_type' => $mime_type ?? 'image/jpeg',
+                'post_title' => preg_replace('/\.[^.]+$/', '', $filename),
+                'post_content' => '',
+                'post_status' => 'inherit'
+            );
+
+            $attach_id = wp_insert_attachment($attachment, $file_path);
+
+            if (!is_wp_error($attach_id)) {
+                $attach_data = wp_generate_attachment_metadata($attach_id, $file_path);
+                wp_update_attachment_metadata($attach_id, $attach_data);
+                return $attach_id;
+            } else {
+                error_log('[SSPU] Failed to create attachment: ' . $attach_id->get_error_message());
+                @unlink($file_path);
+                return false;
+            }
+
+        } catch (Exception $e) {
+            error_log('[SSPU] Exception in save_generated_image: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Handle saving edited image
+     */
+    public function handle_save_edited_image() {
+        try {
+            check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+            if (!current_user_can('upload_shopify_products')) {
+                wp_send_json_error(['message' => 'Permission denied']);
+                return;
+            }
+
+            $image_data = isset($_POST['image_data']) ? $_POST['image_data'] : '';
+            $filename = sanitize_file_name($_POST['filename']);
+
+            if (empty($image_data) || !strpos($image_data, 'data:') === 0) {
+                wp_send_json_error(['message' => 'Invalid image data']);
+                return;
+            }
+
+            $attachment_id = $this->save_generated_image($image_data, $filename);
+
+            if ($attachment_id) {
+                $attachment_url = wp_get_attachment_url($attachment_id);
+
+                // Log activity
+                if (class_exists('SSPU_Analytics')) {
+                    $analytics = new SSPU_Analytics();
+                    $analytics->log_activity(get_current_user_id(), 'ai_image_saved', [
+                        'attachment_id' => $attachment_id,
+                        'filename' => $filename
+                    ]);
+                }
+
+                wp_send_json_success([
+                    'attachment_id' => $attachment_id,
+                    'url' => $attachment_url,
+                    'filename' => $filename
+                ]);
+            } else {
+                wp_send_json_error(['message' => 'Failed to save image']);
+            }
+
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Handle getting chat history
+     */
+    public function handle_get_chat_history() {
+        try {
+            check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+            if (!current_user_can('upload_shopify_products')) {
+                wp_send_json_error(['message' => 'Permission denied']);
+                return;
+            }
+
+            $session_id = sanitize_text_field($_POST['session_id']);
+
+            // For now, return empty history as we don't persist chat history
+            // This could be enhanced to store history in transients or user meta
+            wp_send_json_success([
+                'history' => []
+            ]);
+
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Test Gemini connection
+     */
+    public function test_gemini_connection() {
+        $api_key = get_option('sspu_gemini_api_key');
+        if (empty($api_key)) {
+            $this->last_error = 'Gemini API key not configured';
+            return false;
+        }
+
+        try {
+            // Test with a simple text generation request
+            $payload = [
+                'contents' => [
+                    [
+                        'parts' => [
+                            ['text' => 'Say "Hello" if this API key is working.']
+                        ]
+                    ]
+                ],
+                'generationConfig' => [
+                    'temperature' => 0.1,
+                    'maxOutputTokens' => 10,
+                ]
+            ];
+
+            $response = wp_remote_post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" . $api_key,
+                [
+                    'timeout' => 15,
+                    'headers' => [
+                        'Content-Type' => 'application/json',
+                    ],
+                    'body' => json_encode($payload)
+                ]
+            );
+
+            if (is_wp_error($response)) {
+                $this->last_error = $response->get_error_message();
+                return false;
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            if ($response_code === 200) {
+                return true;
+            } else {
+                $response_body = wp_remote_retrieve_body($response);
+                $error_data = json_decode($response_body, true);
+                $this->last_error = isset($error_data['error']['message']) ? $error_data['error']['message'] : 'API Error ' . $response_code;
+                return false;
+            }
+
+        } catch (Exception $e) {
+            $this->last_error = $e->getMessage();
+            return false;
+        }
+    }
+
+    /**
+     * Get last error
+     */
+    public function get_last_error() {
+        return $this->last_error;
+    }
+}
+
+// Initialize the singleton
+SSPU_AI_Image_Editor::get_instance();

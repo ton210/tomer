@@ -18,6 +18,7 @@ class SSPU_Roles {
         self::create_alibaba_queue_table();
         self::create_image_templates_table();
         self::create_ai_chat_history_table();
+        self::create_mimic_images_table();
         self::update_database_schema();
     }
 
@@ -33,17 +34,16 @@ class SSPU_Roles {
      * Add the custom user role.
      */
     public static function add_role() {
-    add_role(
-        'shopify_uploader',
-        __( 'Shopify Uploader', 'sspu' ),
-        [
-            'read' => true, // Basic dashboard access
-            'upload_files' => true, // ✅ Allows media uploads
-            'upload_shopify_products' => true // Custom capability
-        ]
-    );
-}
-
+        add_role(
+            'shopify_uploader',
+            __( 'Shopify Uploader', 'sspu' ),
+            [
+                'read' => true, // Basic dashboard access
+                'upload_files' => true, // ✅ Allows media uploads
+                'upload_shopify_products' => true // Custom capability
+            ]
+        );
+    }
 
     /**
      * Remove the custom user role.
@@ -238,6 +238,39 @@ class SSPU_Roles {
     }
 
     /**
+     * Creates the mimic reference images table.
+     */
+    public static function create_mimic_images_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'sspu_mimic_images';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            mimic_id mediumint(9) NOT NULL AUTO_INCREMENT,
+            user_id bigint(20) NOT NULL,
+            name varchar(255) NOT NULL,
+            description text DEFAULT NULL,
+            image_id bigint(20) NOT NULL,
+            image_url text NOT NULL,
+            category varchar(50) DEFAULT 'general',
+            style_keywords text DEFAULT NULL,
+            is_global tinyint(1) DEFAULT 0 NOT NULL,
+            usage_count int DEFAULT 0 NOT NULL,
+            created_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+            updated_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+            PRIMARY KEY (mimic_id),
+            KEY user_id (user_id),
+            KEY category (category),
+            KEY is_global (is_global),
+            KEY image_id (image_id),
+            KEY usage_count (usage_count)
+        ) $charset_collate;";
+
+        require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+        dbDelta( $sql );
+    }
+
+    /**
      * Update database schema for existing installations
      */
     public static function update_database_schema() {
@@ -250,6 +283,7 @@ class SSPU_Roles {
         $alibaba_queue_table = $wpdb->prefix . 'sspu_alibaba_queue';
         $image_templates_table = $wpdb->prefix . 'sspu_image_templates';
         $ai_chat_history_table = $wpdb->prefix . 'sspu_ai_chat_history';
+        $mimic_images_table = $wpdb->prefix . 'sspu_mimic_images';
         
         // Add indexes if they don't exist
         $indexes = [
@@ -282,6 +316,13 @@ class SSPU_Roles {
                 'session_id' => "ALTER TABLE {$ai_chat_history_table} ADD INDEX session_id (session_id)",
                 'user_id' => "ALTER TABLE {$ai_chat_history_table} ADD INDEX user_id (user_id)",
                 'timestamp' => "ALTER TABLE {$ai_chat_history_table} ADD INDEX timestamp (timestamp)"
+            ],
+            $mimic_images_table => [
+                'user_id' => "ALTER TABLE {$mimic_images_table} ADD INDEX user_id (user_id)",
+                'category' => "ALTER TABLE {$mimic_images_table} ADD INDEX category (category)",
+                'is_global' => "ALTER TABLE {$mimic_images_table} ADD INDEX is_global (is_global)",
+                'image_id' => "ALTER TABLE {$mimic_images_table} ADD INDEX image_id (image_id)",
+                'usage_count' => "ALTER TABLE {$mimic_images_table} ADD INDEX usage_count (usage_count)"
             ]
         ];
         
@@ -304,6 +345,9 @@ class SSPU_Roles {
         // Insert default templates if they don't exist
         self::insert_default_templates();
         
+        // Insert default mimic images if they don't exist
+        self::insert_default_mimic_images();
+        
         // Check if shopify_data column exists in product_log table
         $product_log_table = $wpdb->prefix . 'sspu_product_log';
         $column_exists = $wpdb->get_results("SHOW COLUMNS FROM {$product_log_table} LIKE 'shopify_data'");
@@ -313,7 +357,7 @@ class SSPU_Roles {
         }
 
         // Update the database version
-        update_option('sspu_db_version', '1.5.0');
+        update_option('sspu_db_version', '1.6.0');
     }
 
     /**
@@ -332,44 +376,58 @@ class SSPU_Roles {
         $default_templates = [
             [
                 'name' => 'Remove Background',
-                'prompt' => 'Remove the background and make it transparent or white. Keep only the main product.',
+                'prompt' => 'EXTRACT the existing product exactly as shown and remove the background completely, creating a clean transparent or white background while preserving all product details.',
                 'category' => 'background',
-                'ai_service' => 'chatgpt',
+                'ai_service' => 'gemini',
                 'is_global' => 1
             ],
             [
                 'name' => 'Add Lifestyle Context',
-                'prompt' => 'Place this product in a lifestyle setting that shows it being used. Make it look professional and appealing for marketing.',
+                'prompt' => 'EXTRACT the existing product without any modifications and place it in a professional lifestyle setting that shows it being used naturally. Make it look professional and appealing for marketing.',
                 'category' => 'lifestyle',
-                'ai_service' => 'chatgpt',
+                'ai_service' => 'gemini',
                 'is_global' => 1
             ],
             [
-                'name' => 'Color Variations',
-                'prompt' => 'Create variations of this product in different colors while maintaining the same style and quality.',
-                'category' => 'variations',
-                'ai_service' => 'chatgpt',
+                'name' => 'E-commerce White Background',
+                'prompt' => 'EXTRACT the existing product exactly as it appears and place it on a pure white background with professional studio lighting, subtle shadow, and proper padding for e-commerce listing.',
+                'category' => 'ecommerce',
+                'ai_service' => 'gemini',
                 'is_global' => 1
             ],
             [
                 'name' => 'Add Company Logo',
-                'prompt' => 'Add a placeholder company logo to this product in a professional way that shows customization options.',
+                'prompt' => 'Keep the existing product image unchanged and add a placeholder company logo in the bottom right corner in a professional way that shows customization options.',
                 'category' => 'branding',
-                'ai_service' => 'chatgpt',
+                'ai_service' => 'gemini',
                 'is_global' => 1
             ],
             [
                 'name' => 'Enhance Product Quality',
-                'prompt' => 'Enhance the image quality, fix lighting, remove imperfections, and make the product look more professional.',
+                'prompt' => 'PRESERVE the existing product exactly as shown but enhance the image quality, fix lighting, remove imperfections, and make the product look more professional and appealing.',
                 'category' => 'enhancement',
                 'ai_service' => 'gemini',
                 'is_global' => 1
             ],
             [
                 'name' => 'Create Hero Shot',
-                'prompt' => 'Transform this into a hero product shot with dramatic lighting and professional composition suitable for homepage banner.',
+                'prompt' => 'EXTRACT the existing product without any changes and transform this into a hero product shot with dramatic lighting and professional composition suitable for homepage banner.',
                 'category' => 'hero',
-                'ai_service' => 'chatgpt',
+                'ai_service' => 'gemini',
+                'is_global' => 1
+            ],
+            [
+                'name' => 'Amazon Listing Ready',
+                'prompt' => 'EXTRACT the existing product exactly as shown and optimize for Amazon listing requirements: pure white background, centered product, proper margins, and professional presentation.',
+                'category' => 'ecommerce',
+                'ai_service' => 'gemini',
+                'is_global' => 1
+            ],
+            [
+                'name' => 'Social Media Optimized',
+                'prompt' => 'EXTRACT the existing product without modifications and create a social media optimized version with eye-catching composition, vibrant colors, and engaging presentation.',
+                'category' => 'social',
+                'ai_service' => 'gemini',
                 'is_global' => 1
             ]
         ];
@@ -381,5 +439,108 @@ class SSPU_Roles {
                 'updated_at' => current_time('mysql')
             ]));
         }
+    }
+
+    /**
+     * Insert default mimic reference images
+     */
+    private static function insert_default_mimic_images() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'sspu_mimic_images';
+        
+        // Check if we already have mimic images
+        $existing = $wpdb->get_var("SELECT COUNT(*) FROM {$table_name}");
+        if ($existing > 0) {
+            return;
+        }
+        
+        $default_mimic_images = [
+            [
+                'name' => 'E-commerce White Background Standard',
+                'description' => 'Clean white background with 10% padding, subtle drop shadow, professional studio lighting - perfect for online stores',
+                'category' => 'ecommerce',
+                'style_keywords' => 'white background, padding, shadow, professional, clean, studio lighting, e-commerce',
+                'is_global' => 1
+            ],
+            [
+                'name' => 'Lifestyle Kitchen Setting',
+                'description' => 'Product shown in modern kitchen environment with natural lighting and lifestyle context',
+                'category' => 'lifestyle',
+                'style_keywords' => 'lifestyle, kitchen, natural lighting, context, environment, realistic, home',
+                'is_global' => 1
+            ],
+            [
+                'name' => 'Hero Banner Dramatic',
+                'description' => 'Premium presentation with dramatic lighting, dark background, and hero shot composition for marketing banners',
+                'category' => 'hero',
+                'style_keywords' => 'dramatic, premium, hero, composition, lighting, dark background, marketing',
+                'is_global' => 1
+            ],
+            [
+                'name' => 'Amazon Listing Style',
+                'description' => 'Amazon-compliant product shot with pure white background, centered positioning, and proper margins',
+                'category' => 'ecommerce',
+                'style_keywords' => 'amazon, pure white, centered, margins, compliant, listing, standard',
+                'is_global' => 1
+            ],
+            [
+                'name' => 'Social Media Square',
+                'description' => 'Square format optimized for Instagram and Facebook with vibrant colors and engaging composition',
+                'category' => 'social',
+                'style_keywords' => 'social media, square, instagram, facebook, vibrant, engaging, colorful',
+                'is_global' => 1
+            ],
+            [
+                'name' => 'Minimalist Modern',
+                'description' => 'Clean minimalist style with soft shadows and modern aesthetic perfect for premium brands',
+                'category' => 'modern',
+                'style_keywords' => 'minimalist, modern, clean, soft shadows, premium, aesthetic, simple',
+                'is_global' => 1
+            ]
+        ];
+        
+        foreach ($default_mimic_images as $mimic) {
+            $wpdb->insert($table_name, array_merge($mimic, [
+                'user_id' => 0, // System images
+                'image_id' => 0, // Will be updated when actual images are uploaded
+                'image_url' => '', // Will be updated when actual images are uploaded
+                'created_at' => current_time('mysql'),
+                'updated_at' => current_time('mysql')
+            ]));
+        }
+        
+        error_log('SSPU: Inserted ' . count($default_mimic_images) . ' default mimic reference images');
+    }
+
+    /**
+     * Get default mimic images that need actual image uploads
+     */
+    public static function get_pending_mimic_images() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'sspu_mimic_images';
+        
+        return $wpdb->get_results(
+            "SELECT * FROM {$table_name} 
+            WHERE is_global = 1 AND image_id = 0 
+            ORDER BY mimic_id ASC"
+        );
+    }
+
+    /**
+     * Update mimic image with actual image data
+     */
+    public static function update_mimic_image($mimic_id, $image_id, $image_url) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'sspu_mimic_images';
+        
+        return $wpdb->update(
+            $table_name,
+            [
+                'image_id' => $image_id,
+                'image_url' => $image_url,
+                'updated_at' => current_time('mysql')
+            ],
+            ['mimic_id' => $mimic_id]
+        );
     }
 }

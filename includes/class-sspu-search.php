@@ -1,5 +1,5 @@
 <?php
-// Updated class-sspu-search.php with pagination and default product display
+// Updated class-sspu-search.php with proper URL handling
 
 class SSPU_Search {
 
@@ -21,6 +21,12 @@ class SSPU_Search {
         $show_all = filter_var($_POST['show_all'] ?? false, FILTER_VALIDATE_BOOLEAN);
         
         $results = $this->perform_search($query, $type, $date_range, $user_id, $status, $page, $per_page, $show_all);
+        
+        // Add store information to results
+        $results['store_info'] = [
+            'store_name' => get_option('sspu_shopify_store_name', ''),
+            'store_domain' => get_option('sspu_shopify_store_domain', '') // Add this option if you have it
+        ];
         
         wp_send_json_success($results);
     }
@@ -101,13 +107,12 @@ class SSPU_Search {
             $total_items = $wpdb->get_var($count_query);
         }
         
-        // Get paginated results with handle
+        // Get paginated results with handle and additional data
         $products_query = "
             SELECT 
                 pl.*,
                 u.display_name,
-                u.user_login,
-                JSON_UNQUOTE(JSON_EXTRACT(pl.shopify_data, '$.handle')) as shopify_handle
+                u.user_login
             FROM {$product_log_table} pl
             JOIN {$users_table} u ON pl.wp_user_id = u.ID
             {$where_clause}
@@ -125,6 +130,27 @@ class SSPU_Search {
             $products = $wpdb->get_results($wpdb->prepare($products_query, $per_page, $offset));
         }
         
+        // Process each product to extract handle and other data
+        foreach ($products as &$product) {
+            // Try to decode shopify_data if it exists
+            if (!empty($product->shopify_data)) {
+                $shopify_data = json_decode($product->shopify_data, true);
+                if ($shopify_data && isset($shopify_data['handle'])) {
+                    $product->shopify_handle = $shopify_data['handle'];
+                } else {
+                    $product->shopify_handle = $this->generate_handle_from_title($product->product_title);
+                }
+            } else {
+                // Generate handle from title if no Shopify data
+                $product->shopify_handle = $this->generate_handle_from_title($product->product_title);
+            }
+            
+            // Ensure we have the Shopify product ID
+            if (empty($product->shopify_product_id) && !empty($shopify_data) && isset($shopify_data['id'])) {
+                $product->shopify_product_id = $shopify_data['id'];
+            }
+        }
+        
         // Calculate pagination data
         $total_pages = ceil($total_items / $per_page);
         
@@ -137,6 +163,14 @@ class SSPU_Search {
                 'per_page' => $per_page
             ]
         ];
+    }
+    
+    private function generate_handle_from_title($title) {
+        // Convert title to handle format (lowercase, hyphenated)
+        $handle = strtolower($title);
+        $handle = preg_replace('/[^a-z0-9]+/', '-', $handle);
+        $handle = trim($handle, '-');
+        return $handle;
     }
 
     private function search_collections($query) {

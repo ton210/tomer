@@ -51,8 +51,31 @@ class SSPU_Analytics {
         $activity_log_table = $wpdb->prefix . 'sspu_activity_log';
         $users_table = $wpdb->prefix . 'users';
         
-        $date_condition = $period > 0 ? $wpdb->prepare("WHERE DATE(upload_timestamp) >= DATE_SUB(CURDATE(), INTERVAL %d DAY)", $period) : '';
+        $date_condition = $period > 0 ? $wpdb->prepare("WHERE log.upload_timestamp >= DATE_SUB(CURDATE(), INTERVAL %d DAY)", $period) : '';
         $activity_date_condition = $period > 0 ? $wpdb->prepare("WHERE DATE(timestamp) >= DATE_SUB(CURDATE(), INTERVAL %d DAY)", $period) : '';
+
+        // Enhanced User Performance Query
+        $user_performance_query = "
+            SELECT
+                u.ID as user_id,
+                u.display_name,
+                COUNT(log.log_id) as total_completed,
+                SUM(CASE WHEN log.upload_timestamp >= DATE_SUB(NOW(), INTERVAL 1 DAY) THEN 1 ELSE 0 END) as 'uploads_today',
+                SUM(CASE WHEN log.upload_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) as 'uploads_week',
+                SUM(CASE WHEN log.upload_timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as 'uploads_month'
+            FROM {$users_table} u
+            LEFT JOIN {$product_log_table} log ON u.ID = log.wp_user_id AND log.status = 'success'
+            GROUP BY u.ID
+            HAVING total_completed > 0
+            ORDER BY total_completed DESC
+        ";
+        $user_performance = $wpdb->get_results($user_performance_query);
+
+        // Calculate averages in PHP
+        foreach ($user_performance as &$user) {
+            $user->avg_day = round($user->uploads_month / 30, 2);
+            $user->avg_week = round($user->uploads_month / 4, 2);
+        }
         
         // Upload performance data
         $upload_performance = $wpdb->get_results("
@@ -134,6 +157,7 @@ class SSPU_Analytics {
         ");
         
         return [
+            'user_performance' => $user_performance,
             'upload_performance' => $upload_performance,
             'user_comparison' => $user_comparison,
             'error_patterns' => $error_patterns,

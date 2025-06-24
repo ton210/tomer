@@ -66,6 +66,74 @@
             currentPage = parseInt($(this).data('page'));
             performSearch(searchQuery === '');
         });
+
+        // Delete product handler
+        $(document).on('click', '.delete-product-btn', function(e) {
+            e.preventDefault();
+            const $btn = $(this);
+            const productId = $btn.data('product-id');
+            const productTitle = $btn.data('product-title');
+            const logId = $btn.data('log-id');
+
+            if (!productId || !confirm(`Are you sure you want to delete "${productTitle}" from Shopify? This action cannot be undone.`)) {
+                return;
+            }
+
+            $btn.prop('disabled', true).text('Deleting...');
+
+            $.post(ajaxurl, {
+                action: 'sspu_delete_product',
+                nonce: sspu_ajax.nonce,
+                product_id: productId,
+                log_id: logId
+            })
+            .done(function(response) {
+                if (response.success) {
+                    // Show success message
+                    showNotification(`Product "${productTitle}" has been deleted successfully.`, 'success');
+                    
+                    // Remove the row with animation
+                    $btn.closest('tr').fadeOut(400, function() {
+                        $(this).remove();
+                        
+                        // If no more rows, show empty message
+                        if ($('#search-results tbody tr').length === 0) {
+                            $('#search-results').html('<p>No products found. The list will refresh automatically.</p>');
+                            // Refresh the search after a delay
+                            setTimeout(() => performSearch(searchQuery === ''), 1500);
+                        }
+                    });
+                } else {
+                    showNotification('Error: ' + (response.data.message || 'Failed to delete product'), 'error');
+                    $btn.prop('disabled', false).text('Delete');
+                }
+            })
+            .fail(function() {
+                showNotification('Network error. Please try again.', 'error');
+                $btn.prop('disabled', false).text('Delete');
+            });
+        });
+    }
+
+    function showNotification(message, type = 'info') {
+        const $notification = $(`
+            <div class="notice notice-${type} is-dismissible" style="position: fixed; top: 50px; right: 20px; z-index: 9999; max-width: 400px;">
+                <p>${escapeHtml(message)}</p>
+            </div>
+        `);
+
+        $('body').append($notification);
+        $notification.hide().slideDown();
+
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            $notification.slideUp(() => $notification.remove());
+        }, 5000);
+
+        // Manual dismiss
+        $notification.on('click', '.notice-dismiss', function() {
+            $notification.slideUp(() => $notification.remove());
+        });
     }
 
     function loadAnalyticsData() {
@@ -81,11 +149,54 @@
                 renderCharts(response.data);
                 renderTimeStats(response.data.time_stats);
                 renderUserActivity(response.data);
+                renderUserPerformanceStats(response.data.user_performance);
             }
         })
         .fail(function() {
             console.error('Failed to load analytics data');
         });
+    }
+    
+    function renderUserPerformanceStats(performanceData) {
+        const $container = $('#user-performance-table-container');
+    
+        if (!performanceData || performanceData.length === 0) {
+            $container.html('<p>No user performance data available for this period.</p>');
+            return;
+        }
+    
+        let html = `
+            <table class="wp-list-table widefat striped">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Total Completed</th>
+                        <th>Today</th>
+                        <th>This Week</th>
+                        <th>This Month</th>
+                        <th>Avg / Day</th>
+                        <th>Avg / Week</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+    
+        performanceData.forEach(user => {
+            html += `
+                <tr>
+                    <td><strong>${escapeHtml(user.display_name)}</strong></td>
+                    <td>${user.total_completed}</td>
+                    <td>${user.uploads_today}</td>
+                    <td>${user.uploads_week}</td>
+                    <td>${user.uploads_month}</td>
+                    <td>${user.avg_day}</td>
+                    <td>${user.avg_week}</td>
+                </tr>
+            `;
+        });
+    
+        html += '</tbody></table>';
+        $container.html(html);
     }
 
     function renderCharts(data) {
@@ -390,6 +501,8 @@
                 return `${metadata.status === 'success' ? 'Success' : 'Failed'} (${formatDuration(metadata.duration)})`;
             case 'create_collection':
                 return `Name: ${metadata.collection_name || 'Unknown'}`;
+            case 'product_delete':
+                return `Deleted: ${metadata.product_title || 'Unknown'}`;
             default:
                 return metadata.product_title || formatDuration(metadata.duration) || '';
         }
@@ -466,7 +579,7 @@
         if (results.products && results.products.length > 0) {
             html += '<h3>Products</h3>';
             html += '<table class="wp-list-table widefat striped">';
-            html += '<thead><tr><th>Product</th><th>User</th><th>Date</th><th>Status</th><th>Shopify Admin</th><th>Live URL</th></tr></thead>';
+            html += '<thead><tr><th>Product</th><th>User</th><th>Date</th><th>Status</th><th>Shopify Admin</th><th>Live URL</th><th>Actions</th></tr></thead>';
             html += '<tbody>';
 
             results.products.forEach(function(product) {
@@ -480,6 +593,14 @@
                     `<a href="https://qstomize.com/products/${product.shopify_handle}" target="_blank">View Live</a>` :
                     'N/A';
 
+                // Add delete button only for successful products with shopify_product_id
+                const deleteButton = product.shopify_product_id && product.status === 'success' ?
+                    `<button class="button button-small button-link-delete delete-product-btn" 
+                        data-product-id="${product.shopify_product_id}" 
+                        data-product-title="${escapeHtml(product.product_title)}"
+                        data-log-id="${product.log_id}">Delete</button>` :
+                    '<span style="color: #666;">—</span>';
+
                 html += `<tr>
                     <td><strong>${escapeHtml(product.product_title)}</strong></td>
                     <td>${escapeHtml(product.display_name)}</td>
@@ -487,6 +608,7 @@
                     <td><span class="status-badge ${statusClass}">${product.status}</span></td>
                     <td>${shopifyAdminLink}</td>
                     <td>${liveUrl}</td>
+                    <td>${deleteButton}</td>
                 </tr>`;
             });
 

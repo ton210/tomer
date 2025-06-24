@@ -1,0 +1,138 @@
+:root {
+    --sspu-bg: #f4f7f6;
+    --sspu-sidebar-bg: #2c3e50;
+    --sspu-sidebar-text: #ecf0f1;
+    --sspu-sidebar-active: #3498db;
+    --sspu-sidebar-hover: #34495e;
+    --sspu-content-bg: #ffffff;
+    --sspu-border-color: #e0e0e0;
+    --sspu-primary: #3498db;
+    --sspu-text-dark: #34495e;
+    --sspu-text-light: #7f8c8d;
+}
+
+#sspu-frontend-app {
+    display: flex;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    background-color: var(--sspu-bg);
+}
+
+/* Sidebar */
+.sspu-sidebar {
+    width: 260px;
+    background-color: var(--sspu-sidebar-bg);
+    color: var(--sspu-sidebar-text);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+}
+
+.sspu-sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--sspu-sidebar-hover);
+}
+.sspu-sidebar-header h2 {
+    margin: 0;
+    color: #fff;
+    text-align: center;
+}
+
+.sspu-nav {
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+.sspu-nav-item {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
+    color: var(--sspu-sidebar-text);
+    text-decoration: none;
+    transition: background-color 0.2s ease;
+    border-left: 3px solid transparent;
+}
+.sspu-nav-item .dashicons {
+    margin-right: 15px;
+}
+.sspu-nav-item:hover {
+    background-color: var(--sspu-sidebar-hover);
+}
+.sspu-nav-item.active {
+    background-color: var(--sspu-sidebar-active);
+    border-left-color: #fff;
+    font-weight: bold;
+}
+
+.sspu-sidebar-footer {
+    padding: 15px;
+    border-top: 1px solid var(--sspu-sidebar-hover);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.sspu-user-info { display: flex; align-items: center; gap: 10px; }
+.sspu-user-info img { border-radius: 50%; }
+.sspu-logout-btn { color: var(--sspu-sidebar-text); text-decoration: none; }
+
+/* Main Content */
+#sspu-main-content {
+    flex-grow: 1;
+    margin-left: 260px; /* Same as sidebar width */
+    padding: 30px;
+    position: relative;
+}
+#sspu-main-content.loading .sspu-loader { display: flex; }
+.sspu-loader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255,255,255,0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+.sspu-spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid var(--sspu-primary);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* Use your previous login and leaderboard styles here */
+/* ... but with some improvements ... */
+
+/* Improved Leaderboard Styles */
+.sspu-leaderboard-table {
+    border-spacing: 0 10px; /* Add spacing between rows */
+}
+.sspu-leaderboard-table th { background: transparent; font-weight: bold; }
+.sspu-leaderboard-table tr {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.sspu-leaderboard-table td { border-bottom: none; }
+.sspu-leaderboard-table td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+.sspu-leaderboard-table td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+
+/* Important: Make sure the existing admin CSS doesn't conflict.
+   You may need to copy and adjust styles from admin-style.css into frontend-style.css
+   for the dynamically loaded partials, prefixing them with #sspu-frontend-app */
+#sspu-frontend-app .wrap { padding: 0; }
+#sspu-frontend-app h1 { font-size: 28px; color: var(--sspu-text-dark); }
+/* Add more overrides as needed */
+
+/* Ensure full width template */
+body.page-template-default #sspu-frontend-app {
+    max-width: 100%; /* Override theme constraints */
+}
