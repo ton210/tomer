@@ -17,6 +17,11 @@ class SSPU_Admin_Settings {
         register_setting('sspu_settings_group', 'sspu_seo_template');
         register_setting('sspu_settings_group', 'sspu_slack_webhook_url'); // New setting
         
+        // NEW: Register Cloudinary settings
+        register_setting('sspu_settings_group', 'sspu_cloudinary_cloud_name');
+        register_setting('sspu_settings_group', 'sspu_cloudinary_api_key');
+        register_setting('sspu_settings_group', 'sspu_cloudinary_api_secret');
+
         // Shopify API section
         add_settings_section(
             'sspu_settings_section',
@@ -63,6 +68,40 @@ class SSPU_Admin_Settings {
             [$this, 'gemini_api_key_field_html'],
             'sspu-settings',
             'sspu_openai_section'
+        );
+
+        // NEW: Cloudinary API section
+        add_settings_section(
+            'sspu_cloudinary_section',
+            __('Cloudinary API Credentials', 'sspu'),
+            function() {
+                echo '<p>' . __('Credentials for uploading design background and mask files to Cloudinary.', 'sspu') . '</p>';
+            },
+            'sspu-settings'
+        );
+
+        add_settings_field(
+            'sspu_cloudinary_cloud_name',
+            __('Cloudinary Cloud Name', 'sspu'),
+            [$this, 'cloudinary_cloud_name_html'],
+            'sspu-settings',
+            'sspu_cloudinary_section'
+        );
+
+        add_settings_field(
+            'sspu_cloudinary_api_key',
+            __('Cloudinary API Key', 'sspu'),
+            [$this, 'cloudinary_api_key_html'],
+            'sspu-settings',
+            'sspu_cloudinary_section'
+        );
+
+        add_settings_field(
+            'sspu_cloudinary_api_secret',
+            __('Cloudinary API Secret', 'sspu'),
+            [$this, 'cloudinary_api_secret_html'],
+            'sspu-settings',
+            'sspu_cloudinary_section'
         );
         
         // Automation Settings section
@@ -161,6 +200,28 @@ class SSPU_Admin_Settings {
             echo '<span id="gemini-api-test-result" style="margin-left: 10px;"></span>';
             $this->render_api_test_script('gemini');
         }
+    }
+    
+    // NEW: HTML generators for Cloudinary fields
+    public function cloudinary_cloud_name_html() {
+        printf(
+            '<input type="text" id="sspu_cloudinary_cloud_name" name="sspu_cloudinary_cloud_name" value="%s" class="regular-text" />',
+            esc_attr(get_option('sspu_cloudinary_cloud_name'))
+        );
+    }
+
+    public function cloudinary_api_key_html() {
+        printf(
+            '<input type="text" id="sspu_cloudinary_api_key" name="sspu_cloudinary_api_key" value="%s" class="regular-text" />',
+            esc_attr(get_option('sspu_cloudinary_api_key'))
+        );
+    }
+
+    public function cloudinary_api_secret_html() {
+        printf(
+            '<input type="password" id="sspu_cloudinary_api_secret" name="sspu_cloudinary_api_secret" value="%s" class="regular-text" />',
+            esc_attr(get_option('sspu_cloudinary_api_secret'))
+        );
     }
     
     public function sku_pattern_field_html() {

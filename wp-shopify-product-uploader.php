@@ -1,12 +1,12 @@
 <?php
 /**
- * Plugin Name:       Shopify Product Uploader
- * Description:       Allows staff to upload products to a Shopify store directly from the WordPress dashboard with AI-powered image editing.
- * Version:           2.1.5
- * Author:            Your Name
- * License:           GPL-2.0-or-later
- * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       sspu
+ * Plugin Name:         Shopify Product Uploader
+ * Description:         Allows staff to upload products to a Shopify store directly from the WordPress dashboard with AI-powered image editing.
+ * Version:             2.2.0
+ * Author:              Your Name
+ * License:             GPL-2.0-or-later
+ * License URI:         https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:         sspu
  */
 
 // If this file is called directly, abort.
@@ -17,12 +17,13 @@ if ( ! defined( 'WPINC' ) ) {
 // Define constants for easy access to paths and URLs
 define( 'SSPU_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SSPU_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'SSPU_VERSION', '2.1.5' );
+define( 'SSPU_VERSION', '2.2.0' );
 
 // Include our class files
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-roles.php';
-// FIX: Add the missing require_once for the Shopify API class here
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-shopify-api.php';
+// NEW: Include the Cloudinary API class
+require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-cloudinary-api.php';
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-admin.php';
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-openai.php';
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-drafts.php';

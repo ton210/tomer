@@ -161,12 +161,11 @@ class SSPU_Admin_Product_Handler {
     }
 
     /**
-     * Processes variant assets: uploads masks, sets metafields, then cleans up.
+     * Processes variant assets.
+     * This is now ONLY for setting metafields, as uploads are handled via AJAX.
      */
     private function process_variant_assets($product, $post_data) {
-        $this->log('Processing variant assets: design files and metafields.');
-
-        $mask_image_ids_to_delete = [];
+        $this->log('Processing variant metafields.');
 
         foreach ($product['variants'] as $index => $variant) {
             if (!isset($post_data['variant_options'][$index])) continue;
@@ -174,37 +173,25 @@ class SSPU_Admin_Product_Handler {
             $variant_data = $post_data['variant_options'][$index];
 
             // --- Designer Data Handling ---
-            if (!empty($variant_data['designer_background_url']) && !empty($variant_data['designer_mask_url'])) {
-                $this->log("Processing design files for variant ID: {$variant['id']}");
+            $background_url = $variant_data['designer_background_url'] ?? '';
+            $mask_url = $variant_data['designer_mask_url'] ?? '';
+            
+            // Only proceed if we have BOTH Cloudinary URLs from the form
+            if (!empty($background_url) && !empty($mask_url) && strpos($background_url, 'cloudinary') !== false) {
+                $this->log("Found Cloudinary URLs for variant ID: {$variant['id']}");
 
-                // 1. Upload background and mask to the product gallery temporarily
-                $background_shopify_img = $this->upload_image_to_product($product['id'], $variant_data['designer_background_url']);
-                $mask_shopify_img = $this->upload_image_to_product($product['id'], $variant_data['designer_mask_url']);
-
-                if ($background_shopify_img && $mask_shopify_img) {
-                    $this->log("Temporarily uploaded background (ID: {$background_shopify_img['id']}) and mask (ID: {$mask_shopify_img['id']}).");
-
-                    // Store the mask image ID for later deletion
-                    $mask_image_ids_to_delete[] = $mask_shopify_img['id'];
-
-                    // 2. Create and save the designer_data metafield
-                    $designer_data = [
-                        'background_image' => $background_shopify_img['src'],
-                        'mask_image'       => $mask_shopify_img['src']
-                    ];
-                    
-                    $this->shopify_api->update_variant_metafield($variant['id'], [
-                        'namespace' => 'custom',
-                        'key' => 'designer_data',
-                        'value' => json_encode($designer_data),
-                        'type' => 'json'
-                    ]);
-                    $this->log("Saved designer_data metafield for variant ID: {$variant['id']}.");
-
-                } else {
-                    $this->log("ERROR: Failed to upload design files for variant ID: {$variant['id']}.");
-                    $this->errors[] = "Failed to upload design files for variant: " . ($variant['title'] ?? $index);
-                }
+                $designer_data = [
+                    'background_image' => esc_url_raw($background_url),
+                    'mask_image'       => esc_url_raw($mask_url)
+                ];
+                
+                $this->shopify_api->update_variant_metafield($variant['id'], [
+                    'namespace' => 'custom',
+                    'key' => 'designer_data',
+                    'value' => json_encode($designer_data),
+                    'type' => 'json'
+                ]);
+                $this->log("Saved designer_data metafield for variant ID: {$variant['id']}.");
             }
 
             // --- Volume Tiers Handling ---
@@ -218,15 +205,8 @@ class SSPU_Admin_Product_Handler {
                 $this->log("Saved volume tiers for variant ID: {$variant['id']}.");
             }
         }
-
-        // 3. Cleanup: Delete all temporary mask images from the product gallery
-        if (!empty($mask_image_ids_to_delete)) {
-            $this->log("Cleaning up " . count($mask_image_ids_to_delete) . " temporary mask images...");
-            foreach ($mask_image_ids_to_delete as $image_id) {
-                $this->shopify_api->delete_product_image($product['id'], $image_id);
-                $this->log("Deleted temporary mask image ID: {$image_id} from product gallery.");
-            }
-        }
+        
+        $this->log("Variant metafield processing complete.");
     }
     
     /**
@@ -707,13 +687,53 @@ class SSPU_Admin_Product_Handler {
             return;
         }
         $product_id = intval($_POST['product_id']);
-        $collection_ids = array_map('intval', $_POST['collection_ids']);
-        $this->update_product_collections($product_id, $collection_ids);
-        wp_send_json_success(['message' => 'Collections updated']);
+        $collection_ids = array_map('intval', $_POST['collection_ids'] ?? []);
+        $original_ids = array_map('intval', $_POST['original_ids'] ?? []);
+
+        $to_add = array_diff($collection_ids, $original_ids);
+        $to_remove = array_diff($original_ids, $collection_ids);
+
+        foreach ($to_add as $id) {
+            $this->shopify_api->add_product_to_collection($product_id, $id);
+        }
+
+        foreach ($to_remove as $id) {
+            $this->shopify_api->remove_product_from_collection($product_id, $id);
+        }
+
+        wp_send_json_success(['message' => 'Collections updated.']);
     }
 
-    private function calculate_changes($original, $new_data){
-        // Dummy implementation for completeness
-        return ['title', 'variants'];
+    private function update_product_collections($product_id, $new_ids) {
+        $this->log("Updating collections for product {$product_id}");
+        $original_ids = $this->shopify_api->get_product_collections($product_id);
+
+        $to_add = array_diff($new_ids, $original_ids);
+        $to_remove = array_diff($original_ids, $new_ids);
+        
+        foreach ($to_add as $id) {
+            $this->shopify_api->add_product_to_collection($product_id, $id);
+        }
+        foreach ($to_remove as $id) {
+            $this->shopify_api->remove_product_from_collection($product_id, $id);
+        }
+        $this->log("Collections updated.");
+    }
+
+    private function calculate_changes($original, $new_data) {
+        if (empty($original)) return ['summary' => 'No original data to compare.'];
+        
+        $changes = [];
+        $simple_fields = ['title', 'body_html', 'vendor', 'product_type', 'status', 'tags'];
+        foreach ($simple_fields as $field) {
+            if ($original[$field] != $new_data[$field]) {
+                $changes[$field] = [
+                    'from' => $original[$field],
+                    'to' => $new_data[$field]
+                ];
+            }
+        }
+        // Add more complex change detection if needed (variants, images, etc.)
+        return $changes;
     }
 }
