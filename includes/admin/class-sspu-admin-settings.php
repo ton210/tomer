@@ -7,7 +7,7 @@ class SSPU_Admin_Settings {
      * Register plugin settings
      */
     public function register_settings() {
-        // Register settings
+        // Register existing settings
         register_setting('sspu_settings_group', 'sspu_shopify_store_name');
         register_setting('sspu_settings_group', 'sspu_shopify_access_token');
         register_setting('sspu_settings_group', 'sspu_openai_api_key');
@@ -15,13 +15,13 @@ class SSPU_Admin_Settings {
         register_setting('sspu_settings_group', 'sspu_sku_pattern');
         register_setting('sspu_settings_group', 'sspu_volume_tier_multipliers');
         register_setting('sspu_settings_group', 'sspu_seo_template');
-        register_setting('sspu_settings_group', 'sspu_slack_webhook_url'); // New setting
-        
-        // NEW: Register Cloudinary settings
+        register_setting('sspu_settings_group', 'sspu_slack_webhook_url');
+
+        // ++ NEW: Register Cloudinary settings ++
         register_setting('sspu_settings_group', 'sspu_cloudinary_cloud_name');
         register_setting('sspu_settings_group', 'sspu_cloudinary_api_key');
         register_setting('sspu_settings_group', 'sspu_cloudinary_api_secret');
-
+        
         // Shopify API section
         add_settings_section(
             'sspu_settings_section',
@@ -70,7 +70,7 @@ class SSPU_Admin_Settings {
             'sspu_openai_section'
         );
 
-        // NEW: Cloudinary API section
+        // ++ NEW: Cloudinary API section ++
         add_settings_section(
             'sspu_cloudinary_section',
             __('Cloudinary API Credentials', 'sspu'),
@@ -201,13 +201,14 @@ class SSPU_Admin_Settings {
             $this->render_api_test_script('gemini');
         }
     }
-    
-    // NEW: HTML generators for Cloudinary fields
+
+    // ++ NEW: HTML for Cloudinary settings fields ++
     public function cloudinary_cloud_name_html() {
         printf(
             '<input type="text" id="sspu_cloudinary_cloud_name" name="sspu_cloudinary_cloud_name" value="%s" class="regular-text" />',
             esc_attr(get_option('sspu_cloudinary_cloud_name'))
         );
+        echo '<p class="description">' . __('Your Cloudinary cloud name from your dashboard.', 'sspu') . '</p>';
     }
 
     public function cloudinary_api_key_html() {

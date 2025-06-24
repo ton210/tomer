@@ -5,7 +5,7 @@ if(!defined('WPINC'))die;
 require_once SSPU_PLUGIN_PATH . 'includes/admin/class-sspu-admin-menus.php';
 require_once SSPU_PLUGIN_PATH . 'includes/admin/class-sspu-admin-scripts.php';
 require_once SSPU_PLUGIN_PATH . 'includes/admin/class-sspu-admin-settings.php';
-require_once SSPU_PLUGIN_PATH . 'includes/admin/class-sspu-admin-ajax.php';
+// require_once SSPU_PLUGIN_PATH . 'includes/admin/class-sspu-admin-ajax.php'; // REMOVE THIS LINE
 require_once SSPU_PLUGIN_PATH . 'includes/admin/class-sspu-admin-product-handler.php';
 require_once SSPU_PLUGIN_PATH . 'includes/admin/class-sspu-admin-partials.php';
 
@@ -27,14 +27,9 @@ class SSPU_Admin {
     private $settings;
     
     /**
-     * @var SSPU_Admin_Ajax
+     * @var SSPU_Admin_Product_Handler  // Changed from SSPU_Admin_Ajax
      */
-    private $ajax;
-    
-    /**
-     * @var SSPU_Admin_Product_Handler
-     */
-    private $product_handler;
+    private $product_handler; // Changed from $ajax
     
     /**
      * @var SSPU_Admin_Partials
@@ -46,7 +41,7 @@ class SSPU_Admin {
         $this->menus = new SSPU_Admin_Menus();
         $this->scripts = new SSPU_Admin_Scripts();
         $this->settings = new SSPU_Admin_Settings();
-        $this->ajax = new SSPU_Admin_Ajax();
+        // $this->ajax = new SSPU_Admin_Ajax(); // REMOVE THIS LINE
         $this->product_handler = new SSPU_Admin_Product_Handler();
         $this->partials = new SSPU_Admin_Partials();
         
@@ -67,10 +62,7 @@ class SSPU_Admin {
         // Settings hooks
         add_action('admin_init', [$this->settings, 'register_settings']);
         
-        // Initialize AJAX handlers
-        $this->ajax->init_handlers();
-        
-        // Initialize product submission handler
+        // Initialize product submission and AJAX handlers from the single product handler class
         $this->product_handler->init_handlers();
     }
     
