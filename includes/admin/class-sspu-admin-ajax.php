@@ -6,7 +6,7 @@ if (!defined('WPINC')) {
 class SSPU_Admin_Ajax
 {
     /**
-     * Initialize AJAX handlers
+     * Initialize AJAX handlers (complete version with all functions)
      */
     public function init_handlers()
     {
@@ -18,7 +18,6 @@ class SSPU_Admin_Ajax
         add_action('wp_ajax_sspu_apply_pricing_to_all', [$this, 'handle_apply_pricing_to_all']);
         add_action('wp_ajax_sspu_generate_sku', [$this, 'handle_sku_generation']);
         add_action('wp_ajax_sspu_calculate_volume_tiers', [$this, 'handle_volume_tier_calculation']);
-        add_action('wp_ajax_sspu_refresh_nonce', [$this, 'handle_refresh_nonce']);
         add_action('wp_ajax_sspu_suggest_price', [$this, 'handle_price_suggestion']);
         add_action('wp_ajax_sspu_generate_seo', [$this, 'handle_seo_generation']);
         add_action('wp_ajax_sspu_ai_suggest_all_pricing', [$this, 'handle_ai_suggest_all_pricing']);
@@ -38,7 +37,7 @@ class SSPU_Admin_Ajax
         // API testing
         add_action('wp_ajax_sspu_test_openai_api', [$this, 'handle_test_openai_api']);
         add_action('wp_ajax_sspu_test_gemini_api', [$this, 'handle_test_gemini_api']);
-        add_action('wp_ajax_sspu_test_shopify_connection', [$this, 'handle_test_shopify_connection']); // New in second script
+        add_action('wp_ajax_sspu_test_shopify_connection', [$this, 'handle_test_shopify_connection']);
 
         // Image-related
         add_action('wp_ajax_sspu_validate_image', [$this, 'handle_validate_image']);
@@ -99,79 +98,38 @@ class SSPU_Admin_Ajax
         add_action('wp_ajax_sspu_get_vendors', [$this, 'handle_get_vendors']);
         add_action('wp_ajax_sspu_update_product_collections', [$this, 'handle_update_product_collections']);
         add_action('wp_ajax_sspu_live_editor_autosave', [$this, 'handle_live_editor_autosave']);
+
+        // Utility handlers
+        add_action('wp_ajax_sspu_refresh_nonce', [$this, 'handle_refresh_nonce']);
     }
 
     /**
      * Delegate to product handler
      */
     public function delegate_to_product_handler()
-    {
+{
+    error_log('SSPU: delegate_to_product_handler called');
+    error_log('SSPU: POST data keys: ' . implode(', ', array_keys($_POST)));
+
+    try {
+        if (!class_exists('SSPU_Admin_Product_Handler')) {
+            error_log('SSPU: SSPU_Admin_Product_Handler class not found');
+            wp_send_json_error(['message' => 'Product handler class not found']);
+            return;
+        }
+
+        error_log('SSPU: Creating product handler instance...');
         $product_handler = new SSPU_Admin_Product_Handler();
+
+        error_log('SSPU: Calling handle_product_submission...');
         $product_handler->handle_product_submission();
+
+    } catch (Exception $e) {
+        error_log('SSPU: Exception in delegate_to_product_handler: ' . $e->getMessage());
+        error_log('SSPU: Stack trace: ' . $e->getTraceAsString());
+        wp_send_json_error(['message' => 'Handler error: ' . $e->getMessage()]);
     }
-
-    /**
-     * Handle nonce refresh request
-     */
-/**
-     * Handle nonce refresh request
-     */
-    public function handle_refresh_nonce()
-    {
-        // THE FIX: The check_ajax_referer() line was removed from here.
-        // It was incorrectly preventing expired nonces from being refreshed.
-
-        if (!current_user_can('upload_shopify_products')) {
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-
-        // Generate a fresh nonce for product submission
-        wp_send_json_success([
-            'nonce' => wp_create_nonce('sspu_submit_product')
-        ]);
-    }
-
-    /**
-     * Handle test Shopify connection (NEW function from second script)
-     */
-    public function handle_test_shopify_connection()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-
-        if (!current_user_can('upload_shopify_products')) { // Changed permission to match general usage
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-
-        $shopify_api = new SSPU_Shopify_API();
-        $response = $shopify_api->send_request('shop.json', 'GET');
-
-        if (isset($response['shop'])) {
-            wp_send_json_success([
-                'message' => 'Connection successful',
-                'shop' => [
-                    'name' => $response['shop']['name'],
-                    'email' => $response['shop']['email'],
-                    'domain' => $response['shop']['domain'],
-                    'currency' => $response['shop']['currency'],
-                    'plan_name' => $response['shop']['plan_name']
-                ]
-            ]);
-        } else {
-            wp_send_json_error([
-                'message' => 'Connection failed',
-                'response' => $response
-            ]);
-        }
-    }
-
-    public function handle_smart_rotate()
-    {
-        // Correct way to get the instance
-        $ai_editor = SSPU_AI_Image_Editor::get_instance();
-        $ai_editor->handle_smart_rotate();
-    }
+}
 
     /**
      * Product generation handlers
@@ -189,11 +147,9 @@ class SSPU_Admin_Ajax
 
             $input_text = sanitize_textarea_field($_POST['input_text']);
             $image_ids = isset($_POST['image_ids']) ? (array) $_POST['image_ids'] : [];
-            // Ensure array_map is used for sanitization of image_ids if they are expected to be numeric
             $image_ids = array_map('absint', $image_ids);
 
             $image_urls = isset($_POST['image_urls']) ? (array) $_POST['image_urls'] : [];
-            // Ensure array_map is used for sanitization of image_urls
             $image_urls = array_map('esc_url_raw', $image_urls);
 
             $type = sanitize_text_field($_POST['type']);
@@ -220,9 +176,6 @@ class SSPU_Admin_Ajax
                     }
                     break;
                 case 'price':
-                    // This case in original script calls suggest_price with empty variant_info
-                    // The handle_price_suggestion below handles it more comprehensively
-                    // This might be a legacy call or simple fallback. Keeping as is.
                     $result = $openai->suggest_price($input_text, '', '');
                     if ($result) {
                         wp_send_json_success(['price' => $result]);
@@ -325,9 +278,7 @@ class SSPU_Admin_Ajax
         }
 
         $action_type = sanitize_text_field($_POST['action_type']);
-        // For complex arrays like 'source_data', deeper recursive sanitization is recommended
-        // For this example, we'll cast it to array and assume further handling on client side or in specific processing methods.
-        $source_data = json_decode(stripslashes($_POST['source_data']), true); // Assuming it comes as JSON string
+        $source_data = json_decode(stripslashes($_POST['source_data']), true);
 
         wp_send_json_success(['action_type' => $action_type, 'data' => $source_data]);
     }
@@ -348,7 +299,6 @@ class SSPU_Admin_Ajax
             $variant_name = sanitize_text_field($_POST['variant_name']);
             $variant_value = sanitize_text_field($_POST['variant_value']);
 
-            // Ensure SSPU_SKU_Generator class exists and is instantiated correctly
             if (!class_exists('SSPU_SKU_Generator')) {
                 wp_send_json_error(['message' => 'SKU Generator class not found.']);
                 return;
@@ -454,7 +404,7 @@ class SSPU_Admin_Ajax
 
             $product_name = sanitize_text_field($_POST['product_name']);
             $description = sanitize_textarea_field($_POST['description']);
-            $variant_info = sanitize_text_field($_POST['variant_info']); // This might need more specific sanitization depending on format
+            $variant_info = sanitize_text_field($_POST['variant_info']);
 
             if (!class_exists('SSPU_OpenAI')) {
                 wp_send_json_error(['message' => 'OpenAI class not found.']);
@@ -515,7 +465,6 @@ class SSPU_Admin_Ajax
             $tiers = $openai->suggest_volume_tiers($product_name, $base_price, $min_quantity);
 
             if ($tiers === false) {
-                // Even if tiers fail, still return the base price as it's valid
                 wp_send_json_success([
                     'base_price' => $base_price,
                     'tiers' => [],
@@ -577,8 +526,24 @@ class SSPU_Admin_Ajax
         }
     }
 
+    public function handle_smart_rotate()
+    {
+        $ai_editor = SSPU_AI_Image_Editor::get_instance();
+        $ai_editor->handle_smart_rotate();
+    }
+
+    public function handle_mimic_all_variants()
+    {
+        if (!class_exists('SSPU_AI_Image_Editor')) {
+            wp_send_json_error(['message' => 'AI Image Editor class not found.']);
+            return;
+        }
+        $ai_editor = SSPU_AI_Image_Editor::get_instance();
+        $ai_editor->handle_mimic_all_variants();
+    }
+
     /**
-     * Collection handlers
+     * Handle get collections
      */
     public function handle_get_collections()
     {
@@ -593,6 +558,7 @@ class SSPU_Admin_Ajax
                 wp_send_json_error(['message' => 'Shopify API class not found.']);
                 return;
             }
+
             $shopify_api = new SSPU_Shopify_API();
             $collections = $shopify_api->get_all_collections();
 
@@ -613,6 +579,9 @@ class SSPU_Admin_Ajax
         }
     }
 
+    /**
+     * Handle create collection
+     */
     public function handle_create_collection()
     {
         try {
@@ -632,6 +601,7 @@ class SSPU_Admin_Ajax
                 wp_send_json_error(['message' => 'Shopify API class not found.']);
                 return;
             }
+
             $shopify_api = new SSPU_Shopify_API();
             $response = $shopify_api->send_request('custom_collections.json', 'POST', [
                 'custom_collection' => ['title' => $collection_name]
@@ -649,10 +619,102 @@ class SSPU_Admin_Ajax
     }
 
     /**
-     * Draft handlers
+     * Handle refresh nonce
      */
-    public function handle_save_draft()
+    /**
+ * Handle refresh nonce - FIXED VERSION
+ */
+public function handle_refresh_nonce()
+{
+    // FIXED: Use sspu_ajax_nonce for verification
+    check_ajax_referer('sspu_ajax_nonce', 'sspu_nonce');
+
+    if (!current_user_can('upload_shopify_products')) {
+        wp_send_json_error(['message' => 'Permission denied']);
+        return;
+    }
+
+    wp_send_json_success([
+        'nonce' => wp_create_nonce('sspu_ajax_nonce')  // FIXED: Create with correct action
+    ]);
+}
+
+    /**
+     * Handle scrape alibaba variants
+     */
+    public function handle_scrape_alibaba_variants()
     {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied.']);
+            return;
+        }
+
+        $url = isset($_POST['url']) ? sanitize_url($_POST['url']) : '';
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+            wp_send_json_error(['message' => 'A valid URL is required.']);
+            return;
+        }
+
+        if (!class_exists('SSPU_Image_Retriever')) {
+            wp_send_json_error(['message' => 'Image Retriever class not found.']);
+            return;
+        }
+
+        $image_retriever = new SSPU_Image_Retriever();
+        $variants_data = $image_retriever->scrape_variants_from_url($url);
+
+        if ($variants_data === false) {
+            wp_send_json_error(['message' => 'Failed to retrieve or parse variant data from the URL. The page structure might have changed.']);
+            return;
+        }
+
+        if (empty($variants_data)) {
+            wp_send_json_error(['message' => 'No variant data with images found on the page.']);
+            return;
+        }
+
+        wp_send_json_success(['variants' => $variants_data]);
+    }
+
+    /**
+     * Handle test shopify connection
+     */
+    public function handle_test_shopify_connection()
+    {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $shopify_api = new SSPU_Shopify_API();
+        $response = $shopify_api->send_request('shop.json', 'GET');
+
+        if (isset($response['shop'])) {
+            wp_send_json_success([
+                'message' => 'Connection successful',
+                'shop' => [
+                    'name' => $response['shop']['name'],
+                    'email' => $response['shop']['email'],
+                    'domain' => $response['shop']['domain'],
+                    'currency' => $response['shop']['currency'],
+                    'plan_name' => $response['shop']['plan_name']
+                ]
+            ]);
+        } else {
+            wp_send_json_error([
+                'message' => 'Connection failed',
+                'response' => $response
+            ]);
+        }
+    }
+
+    /**
+     * Handle save draft
+     */
+    public function handle_save_draft() {
         try {
             check_ajax_referer('sspu_ajax_nonce', 'nonce');
             if (!current_user_can('upload_shopify_products')) {
@@ -660,15 +722,20 @@ class SSPU_Admin_Ajax
                 return;
             }
 
-            // Sanitization for draft_data needs to be deep and context-aware.
-            // For now, it's passed as is, assuming SSPU_Drafts handles it.
-            $draft_data = json_decode(stripslashes($_POST['draft_data']), true); // Assuming JSON string from JS
+            $draft_data_raw = $_POST['draft_data'] ?? '';
+            if (is_array($draft_data_raw)) {
+                $draft_data = $draft_data_raw;
+            } else {
+                $draft_data = json_decode(stripslashes($draft_data_raw), true);
+            }
+
             $user_id = get_current_user_id();
 
             if (!class_exists('SSPU_Drafts')) {
                 wp_send_json_error(['message' => 'Drafts class not found.']);
                 return;
             }
+
             $drafts = new SSPU_Drafts();
             $draft_id = $drafts->save_draft($user_id, $draft_data);
 
@@ -682,8 +749,10 @@ class SSPU_Admin_Ajax
         }
     }
 
-    public function handle_load_draft()
-    {
+    /**
+     * Handle load draft
+     */
+    public function handle_load_draft() {
         try {
             check_ajax_referer('sspu_ajax_nonce', 'nonce');
             if (!current_user_can('upload_shopify_products')) {
@@ -696,6 +765,7 @@ class SSPU_Admin_Ajax
                 wp_send_json_error(['message' => 'Drafts class not found.']);
                 return;
             }
+
             $drafts = new SSPU_Drafts();
             $draft = $drafts->get_latest_draft($user_id);
 
@@ -709,8 +779,10 @@ class SSPU_Admin_Ajax
         }
     }
 
-    public function handle_auto_save_draft()
-    {
+    /**
+     * Handle auto save draft
+     */
+    public function handle_auto_save_draft() {
         try {
             check_ajax_referer('sspu_ajax_nonce', 'nonce');
             if (!current_user_can('upload_shopify_products')) {
@@ -718,15 +790,20 @@ class SSPU_Admin_Ajax
                 return;
             }
 
-            // Sanitization for draft_data needs to be deep and context-aware.
-            // For now, it's passed as is, assuming SSPU_Drafts handles it.
-            $draft_data = json_decode(stripslashes($_POST['draft_data']), true); // Assuming JSON string from JS
+            $draft_data_raw = $_POST['draft_data'] ?? '';
+            if (is_array($draft_data_raw)) {
+                $draft_data = $draft_data_raw;
+            } else {
+                $draft_data = json_decode(stripslashes($draft_data_raw), true);
+            }
+
             $user_id = get_current_user_id();
 
             if (!class_exists('SSPU_Drafts')) {
                 wp_send_json_error(['message' => 'Drafts class not found.']);
                 return;
             }
+
             $drafts = new SSPU_Drafts();
             $draft_id = $drafts->save_draft($user_id, $draft_data, true);
 
@@ -744,562 +821,299 @@ class SSPU_Admin_Ajax
     }
 
     /**
-     * API test handlers
+     * Handle test OpenAI API
      */
-    public function handle_test_openai_api()
-    {
-        try {
-            check_ajax_referer('sspu_ajax_nonce', 'nonce');
-            if (!current_user_can('manage_options')) { // 'manage_options' is typically for admins
-                wp_send_json_error(['message' => 'Permission denied']);
-                return;
-            }
-
-            if (!class_exists('SSPU_OpenAI')) {
-                wp_send_json_error(['message' => 'OpenAI class not found.']);
-                return;
-            }
-            $openai = new SSPU_OpenAI();
-            if ($openai->test_api_connection()) {
-                wp_send_json_success(['message' => 'API connection successful']);
-            } else {
-                $error = $openai->get_last_error() ?: 'Connection test failed';
-                wp_send_json_error(['message' => $error]);
-            }
-        } catch (Exception $e) {
-            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
-        }
-    }
-
-    public function handle_test_gemini_api()
-    {
-        try {
-            check_ajax_referer('sspu_ajax_nonce', 'nonce');
-            if (!current_user_can('manage_options')) { // 'manage_options' is typically for admins
-                wp_send_json_error(['message' => 'Permission denied']);
-                return;
-            }
-
-            if (!class_exists('SSPU_AI_Image_Editor')) {
-                wp_send_json_error(['message' => 'AI Image Editor class not found.']);
-                return;
-            }
-            $ai_editor = SSPU_AI_Image_Editor::get_instance();
-            if ($ai_editor->test_gemini_connection()) {
-                wp_send_json_success(['message' => 'API connection successful']);
-            } else {
-                wp_send_json_error(['message' => 'Connection test failed']);
-            }
-        } catch (Exception $e) {
-            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Image handlers
-     */
-    public function handle_validate_image()
-    {
-        try {
-            check_ajax_referer('sspu_ajax_nonce', 'nonce');
-            if (!current_user_can('upload_shopify_products')) {
-                wp_send_json_error(['message' => 'Permission denied']);
-                return;
-            }
-
-            $image_id = absint($_POST['image_id']);
-            $attachment = get_post($image_id);
-
-            if (!$attachment || $attachment->post_type !== 'attachment') {
-                wp_send_json_error(['message' => 'Invalid image']);
-                return;
-            }
-
-            $mime_type = get_post_mime_type($image_id);
-            $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
-            if (!in_array($mime_type, $allowed_types)) {
-                wp_send_json_error(['message' => 'Invalid image type. Allowed: JPEG, PNG, GIF, WebP']);
-                return;
-            }
-
-            wp_send_json_success(['message' => 'Image is valid']);
-        } catch (Exception $e) {
-            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
-        }
-    }
-
-    public function handle_upload_images()
-    {
-        try {
-            check_ajax_referer('sspu_ajax_nonce', 'nonce');
-            if (!current_user_can('upload_shopify_products')) {
-                wp_send_json_error(['message' => 'Permission denied']);
-                return;
-            }
-
-            require_once(ABSPATH . 'wp-admin/includes/file.php');
-            require_once(ABSPATH . 'wp-admin/includes/image.php');
-            require_once(ABSPATH . 'wp-admin/includes/media.php');
-
-            $uploaded_ids = [];
-            $uploaded_urls = [];
-
-            foreach ($_FILES as $key => $file) {
-                if (strpos($key, 'file_') !== 0) continue;
-
-                // Basic validation for uploaded files
-                if ($file['error'] !== UPLOAD_ERR_OK) {
-                    wp_send_json_error(['message' => 'File upload error: ' . $file['error']]);
-                    return;
-                }
-
-                $upload = wp_handle_upload($file, ['test_form' => false]);
-
-                if (isset($upload['error'])) {
-                    wp_send_json_error(['message' => $upload['error']]);
-                    return;
-                }
-
-                $attachment_id = wp_insert_attachment([
-                    'post_mime_type' => $upload['type'],
-                    'post_title' => preg_replace('/\.[^.]+$/', '', basename($upload['file'])),
-                    'post_content' => '',
-                    'post_status' => 'inherit'
-                ], $upload['file']);
-
-                if (!is_wp_error($attachment_id)) {
-                    wp_update_attachment_metadata($attachment_id, wp_generate_attachment_metadata($attachment_id, $upload['file']));
-                    $uploaded_ids[] = $attachment_id;
-                    $uploaded_urls[$attachment_id] = wp_get_attachment_thumb_url($attachment_id);
-                } else {
-                     error_log('SSPU Upload Image Error: ' . $attachment_id->get_error_message());
-                }
-            }
-
-            if (empty($uploaded_ids)) {
-                wp_send_json_error(['message' => 'No files were uploaded successfully']);
-                return;
-            }
-
-            wp_send_json_success([
-                'ids' => $uploaded_ids,
-                'urls' => $uploaded_urls
-            ]);
-        } catch (Exception $e) {
-            wp_send_json_error(['message' => 'An error occurred: ' . $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Alibaba-related handlers
-     */
-    public function handle_get_current_alibaba_url()
-    {
+    public function handle_test_openai_api() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        if (!current_user_can('upload_shopify_products')) {
+        if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Permission denied']);
             return;
         }
 
-        $user_id = get_current_user_id();
-        if (class_exists('SSPU_Alibaba_Queue')) {
-            $assignment = SSPU_Alibaba_Queue::get_user_assignment($user_id);
-            if ($assignment) {
-                wp_send_json_success([
-                    'url' => $assignment->url,
-                    'queue_id' => $assignment->queue_id,
-                    'assigned_at' => $assignment->assigned_at
-                ]);
-                return;
-            }
-        }
-
-        wp_send_json_error(['message' => 'No URL assigned']);
-    }
-
-    public function handle_fetch_alibaba_product_name()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        if (!current_user_can('upload_shopify_products')) { // Added permission check
-            wp_send_json_error(['message' => 'Permission denied']);
+        if (!class_exists('SSPU_OpenAI')) {
+            wp_send_json_error(['message' => 'OpenAI class not found.']);
             return;
         }
 
-        $alibaba_url = isset($_POST['alibaba_url']) ? esc_url_raw($_POST['alibaba_url']) : '';
-
-        if (empty($alibaba_url)) {
-            wp_send_json_error(['message' => 'No URL provided']);
-            return;
-        }
-
-        $response = wp_remote_get($alibaba_url, ['timeout' => 30]); // Added timeout
-
-        if (is_wp_error($response)) {
-            wp_send_json_error(['message' => 'Failed to fetch page: ' . $response->get_error_message()]);
-            return;
-        }
-
-        $body = wp_remote_retrieve_body($response);
-
-        // More robust parsing for h1 tag, considering multiple possible structures
-        preg_match('/<h1[^>]*class="title"[^>]*>(.*?)<\/h1>/is', $body, $matches_class); // Prefer class="title"
-        preg_match('/<h1[^>]*itemprop="name"[^>]*>(.*?)<\/h1>/is', $body, $matches_itemprop); // Or itemprop="name"
-        preg_match('/<h1[^>]*>(.*?)<\/h1>/is', $body, $matches_generic); // Fallback generic h1
-
-        $product_name = '';
-        if (!empty($matches_class[1])) {
-            $product_name = $matches_class[1];
-        } elseif (!empty($matches_itemprop[1])) {
-            $product_name = $matches_itemprop[1];
-        } elseif (!empty($matches_generic[1])) {
-            $product_name = $matches_generic[1];
-        }
-
-        if (!empty($product_name)) {
-            $product_name = strip_tags($product_name);
-            $product_name = html_entity_decode($product_name, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-            $product_name = trim($product_name);
-            $product_name = preg_replace('/\s+/', ' ', $product_name); // Normalize whitespace
-
-            wp_send_json_success(['product_name' => $product_name]);
+        $openai = new SSPU_OpenAI();
+        if ($openai->test_api_connection()) {
+            wp_send_json_success(['message' => 'API connection successful']);
         } else {
-            wp_send_json_error(['message' => 'Could not find product title on the Alibaba page. The page structure might have changed.']);
+            $error = $openai->get_last_error() ?: 'Connection test failed';
+            wp_send_json_error(['message' => $error]);
         }
     }
 
     /**
-     * Detect color using AI (IMPROVED in second script)
+     * Handle test Gemini API
      */
-    public function handle_detect_color()
-    {
+    public function handle_test_gemini_api() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
-
-        if (!current_user_can('upload_shopify_products')) {
+        if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Permission denied']);
             return;
         }
 
-        $openai_api_key = get_option('sspu_openai_api_key');
-        if (empty($openai_api_key)) {
-            wp_send_json_error(['message' => 'OpenAI API key not configured']);
+        if (!class_exists('SSPU_AI_Image_Editor')) {
+            wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
         }
 
-        $image_data = isset($_POST['image_data']) ? $_POST['image_data'] : '';
-
-        if (empty($image_data)) {
-            wp_send_json_error(['message' => 'No image data provided']);
-            return;
-        }
-
-        // Validate base64 image data
-        if (strpos($image_data, 'data:image/') !== 0) {
-            wp_send_json_error(['message' => 'Invalid image data format. Expected base64 image URL.']);
-            return;
-        }
-
-        $messages = [
-            [
-                'role' => 'user',
-                'content' => [
-                    [
-                        'type' => 'text',
-                        'text' => 'Look at this product image and identify the primary color. Return ONLY the color name in 1-2 words. Examples: Red, Blue, Light Green, Dark Brown, White, Black. Do not include any other text or explanation.'
-                    ],
-                    [
-                        'type' => 'image_url',
-                        'image_url' => ['url' => $image_data]
-                    ]
-                ]
-            ]
-        ];
-
-        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $openai_api_key,
-                'Content-Type' => 'application/json',
-            ],
-            'body' => json_encode([
-                'model' => 'gpt-4o', // Updated model for better vision capabilities
-                'messages' => $messages,
-                'max_tokens' => 50
-            ]),
-            'timeout' => 30
-        ]);
-
-        if (is_wp_error($response)) {
-            wp_send_json_error(['message' => 'API request failed: ' . $response->get_error_message()]);
-            return;
-        }
-
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if (isset($body['choices'][0]['message']['content'])) {
-            $color = trim($body['choices'][0]['message']['content']);
-
-            // Clean up the response - remove any extra text or punctuation
-            $color = preg_replace('/[^a-zA-Z\s]/', '', $color);
-            $color = trim($color);
-
-            if (!empty($color)) {
-                wp_send_json_success(['color' => $color]);
-            } else {
-                wp_send_json_error(['message' => 'Could not determine color from image. AI response was empty or unparseable.']);
-            }
+        $ai_editor = SSPU_AI_Image_Editor::get_instance();
+        if ($ai_editor->test_gemini_connection()) {
+            wp_send_json_success(['message' => 'API connection successful']);
         } else {
-            $error_message = 'Failed to detect color. AI response malformed.';
-            if (isset($body['error']['message'])) {
-                $error_message .= ': ' . $body['error']['message'];
-            }
-            wp_send_json_error(['message' => $error_message]);
+            wp_send_json_error(['message' => 'Connection test failed']);
         }
     }
 
     /**
-     * Handle fetching MOQ from Alibaba
+     * Handle validate image
      */
-    public function handle_fetch_alibaba_moq()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-
-        if (!current_user_can('upload_shopify_products')) {
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-
-        $alibaba_url = isset($_POST['alibaba_url']) ? esc_url_raw($_POST['alibaba_url']) : '';
-
-        if (empty($alibaba_url)) {
-            wp_send_json_error(['message' => 'No URL provided']);
-            return;
-        }
-
-        if (!class_exists('SSPU_Image_Retriever')) {
-            wp_send_json_error(['message' => 'Image Retriever class not found.']);
-            return;
-        }
-        $retriever = new SSPU_Image_Retriever();
-        $moq_data = $retriever->fetch_alibaba_moq($alibaba_url);
-
-        if ($moq_data && isset($moq_data['moq'])) {
-            // Log the activity
-            if (class_exists('SSPU_Analytics')) {
-                $analytics = new SSPU_Analytics();
-                $analytics->log_activity(get_current_user_id(), 'alibaba_moq_fetched', [
-                    'url' => $alibaba_url,
-                    'moq' => $moq_data['moq'],
-                    'unit' => $moq_data['unit']
-                ]);
-            }
-
-            wp_send_json_success([
-                'moq' => $moq_data['moq'],
-                'unit' => $moq_data['unit'],
-                'message' => sprintf('MOQ found: %d %s', $moq_data['moq'], $moq_data['unit'])
-            ]);
-        } else {
-            wp_send_json_error(['message' => 'Could not find MOQ on the page. The page structure might have changed.']);
-        }
-    }
-
-    /**
-     * Handle fetching product description from Alibaba
-     */
-    public function handle_fetch_alibaba_description()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-
-        if (!current_user_can('upload_shopify_products')) {
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-
-        $alibaba_url = isset($_POST['alibaba_url']) ? esc_url_raw($_POST['alibaba_url']) : '';
-
-        if (empty($alibaba_url)) {
-            wp_send_json_error(['message' => 'No URL provided']);
-            return;
-        }
-
-        if (!class_exists('SSPU_Image_Retriever')) {
-            wp_send_json_error(['message' => 'Image Retriever class not found.']);
-            return;
-        }
-        $retriever = new SSPU_Image_Retriever();
-        $description_data = $retriever->fetch_alibaba_description($alibaba_url);
-
-        if ($description_data && (!empty($description_data['attributes']) || !empty($description_data['description']) || !empty($description_data['features']))) {
-            $html_content = '';
-
-            // Format attributes as HTML table
-            if (!empty($description_data['attributes'])) {
-                $html_content .= $retriever->format_attributes_as_table($description_data['attributes']);
-            }
-
-            // Add any additional description
-            if (!empty($description_data['description'])) {
-                $html_content .= '<p>' . wp_kses_post($description_data['description']) . '</p>'; // Use wp_kses_post for description
-            }
-
-            // Add features if any
-            if (!empty($description_data['features'])) {
-                $html_content .= '<h4>Product Features:</h4><ul>';
-                foreach ($description_data['features'] as $feature) {
-                    $html_content .= '<li>' . wp_kses_post($feature) . '</li>'; // Use wp_kses_post for features
-                }
-                $html_content .= '</ul>';
-            }
-
-            // Log the activity
-            if (class_exists('SSPU_Analytics')) {
-                $analytics = new SSPU_Analytics();
-                $analytics->log_activity(get_current_user_id(), 'alibaba_description_fetched', [
-                    'url' => $alibaba_url,
-                    'attributes_count' => count($description_data['attributes']),
-                    'features_count' => count($description_data['features'])
-                ]);
-            }
-
-            wp_send_json_success([
-                'html' => $html_content,
-                'attributes' => $description_data['attributes'],
-                'features' => $description_data['features'],
-                'description' => $description_data['description'],
-                'message' => sprintf('Found %d product attributes', count($description_data['attributes']))
-            ]);
-        } else {
-            wp_send_json_error(['message' => 'Could not find product details on the page. The page structure might have changed or content is missing.']);
-        }
-    }
-
-    /**
-     * Template handlers
-     */
-    public function handle_get_single_template_content()
-    {
+    public function handle_validate_image() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
             return;
         }
 
-        $template_id = absint($_POST['template_id']);
+        $image_id = absint($_POST['image_id']);
+        $attachment = get_post($image_id);
 
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'sspu_image_templates';
-        $template_data = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM {$table_name} WHERE template_id = %d",
-            $template_id
-        ));
+        if (!$attachment || $attachment->post_type !== 'attachment') {
+            wp_send_json_error(['message' => 'Invalid image']);
+            return;
+        }
 
-        if (!$template_data) {
-            wp_send_json_error(['message' => 'Template not found']);
+        $mime_type = get_post_mime_type($image_id);
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+        if (!in_array($mime_type, $allowed_types)) {
+            wp_send_json_error(['message' => 'Invalid image type. Allowed: JPEG, PNG, GIF, WebP']);
+            return;
+        }
+
+        wp_send_json_success(['message' => 'Image is valid']);
+    }
+
+    /**
+     * Handle upload images
+     */
+    public function handle_upload_images() {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        require_once(ABSPATH . 'wp-admin/includes/file.php');
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        require_once(ABSPATH . 'wp-admin/includes/media.php');
+
+        $uploaded_ids = [];
+        $uploaded_urls = [];
+
+        foreach ($_FILES as $key => $file) {
+            if (strpos($key, 'file_') !== 0) continue;
+
+            if ($file['error'] !== UPLOAD_ERR_OK) {
+                wp_send_json_error(['message' => 'File upload error: ' . $file['error']]);
+                return;
+            }
+
+            $upload = wp_handle_upload($file, ['test_form' => false]);
+
+            if (isset($upload['error'])) {
+                wp_send_json_error(['message' => $upload['error']]);
+                return;
+            }
+
+            $attachment_id = wp_insert_attachment([
+                'post_mime_type' => $upload['type'],
+                'post_title' => preg_replace('/\.[^.]+$/', '', basename($upload['file'])),
+                'post_content' => '',
+                'post_status' => 'inherit'
+            ], $upload['file']);
+
+            if (!is_wp_error($attachment_id)) {
+                wp_update_attachment_metadata($attachment_id, wp_generate_attachment_metadata($attachment_id, $upload['file']));
+                $uploaded_ids[] = $attachment_id;
+                $uploaded_urls[$attachment_id] = wp_get_attachment_thumb_url($attachment_id);
+            }
+        }
+
+        if (empty($uploaded_ids)) {
+            wp_send_json_error(['message' => 'No files were uploaded successfully']);
             return;
         }
 
         wp_send_json_success([
-            'name' => sanitize_text_field($template_data->name),
-            'content' => sanitize_textarea_field($template_data->prompt) // Assuming 'prompt' is the content field
+            'ids' => $uploaded_ids,
+            'urls' => $uploaded_urls
         ]);
     }
 
     /**
-     * Proxy handlers for other classes
+     * Handle create masked image
      */
-    public function handle_get_analytics_proxy()
-    {
-        if (!class_exists('SSPU_Analytics')) {
-            wp_send_json_error(['message' => 'Analytics class not found.']);
-            return;
-        }
-        $analytics = new SSPU_Analytics();
-        $analytics->handle_get_analytics();
-    }
-
-    public function handle_export_analytics()
-    {
+    public function handle_create_masked_image() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
             return;
         }
 
-        wp_send_json_error(['message' => 'Export functionality not yet implemented']);
-    }
+        $image_id = absint($_POST['image_id']);
+        $mask_coordinates = $_POST['mask_coordinates'];
 
-    public function handle_get_user_activity_proxy()
-    {
-        if (!class_exists('SSPU_Analytics')) {
-            wp_send_json_error(['message' => 'Analytics class not found.']);
+        if (!$image_id || !is_array($mask_coordinates) || empty($mask_coordinates)) {
+            wp_send_json_error(['message' => 'Missing required parameters or invalid mask coordinates.']);
             return;
         }
-        $analytics = new SSPU_Analytics();
-        $analytics->handle_get_user_activity();
-    }
 
-    public function handle_global_search_proxy()
-    {
-        if (!class_exists('SSPU_Search')) {
-            wp_send_json_error(['message' => 'Search class not found.']);
+        // Sanitize coordinates explicitly
+        $crop_x = intval($mask_coordinates['x'] ?? 0);
+        $crop_y = intval($mask_coordinates['y'] ?? 0);
+        $crop_width = intval($mask_coordinates['width'] ?? 0);
+        $crop_height = intval($mask_coordinates['height'] ?? 0);
+
+        $image_path = get_attached_file($image_id);
+        if (!$image_path || !file_exists($image_path)) {
+            wp_send_json_error(['message' => 'Image file not found on server.']);
             return;
         }
-        $search = new SSPU_Search();
-        $search->handle_global_search();
-    }
 
-    public function handle_get_search_filters_proxy()
-    {
-        if (!class_exists('SSPU_Search')) {
-            wp_send_json_error(['message' => 'Search class not found.']);
+        $image_info = getimagesize($image_path);
+        if (!$image_info) {
+            wp_send_json_error(['message' => 'Invalid image file or unable to get image dimensions.']);
             return;
         }
-        $search = new SSPU_Search();
-        $search->handle_get_search_filters();
-    }
 
-    public function handle_request_alibaba_url()
-    {
-        if (!class_exists('SSPU_Alibaba_Queue')) {
-            wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
+        $mime_type = $image_info['mime'];
+        $width = $image_info[0];
+        $height = $image_info[1];
+
+        // Create image resource from source image
+        $source_image = null;
+        switch ($mime_type) {
+            case 'image/jpeg':
+                $source_image = imagecreatefromjpeg($image_path);
+                break;
+            case 'image/png':
+                $source_image = imagecreatefrompng($image_path);
+                break;
+            case 'image/gif':
+                $source_image = imagecreatefromgif($image_path);
+                break;
+            case 'image/webp':
+                if (function_exists('imagecreatefromwebp')) {
+                    $source_image = imagecreatefromwebp($image_path);
+                }
+                break;
+            default:
+                wp_send_json_error(['message' => 'Unsupported image type: ' . $mime_type]);
+                return;
+        }
+
+        if (!$source_image) {
+            wp_send_json_error(['message' => 'Failed to create image resource from original file.']);
             return;
         }
-        $queue = new SSPU_Alibaba_Queue();
-        $queue->handle_request_url();
-    }
 
-    public function handle_complete_alibaba_url()
-    {
-        if (!class_exists('SSPU_Alibaba_Queue')) {
-            wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
+        // Adjust crop coordinates to stay within image bounds
+        $crop_x = max(0, $crop_x);
+        $crop_y = max(0, $crop_y);
+        $crop_width = min($crop_width, $width - $crop_x);
+        $crop_height = min($crop_height, $height - $crop_y);
+
+        if ($crop_width <= 0 || $crop_height <= 0) {
+            imagedestroy($source_image);
+            wp_send_json_error(['message' => 'Invalid crop area dimensions.']);
             return;
         }
-        $queue = new SSPU_Alibaba_Queue();
-        $queue->handle_complete_url();
-    }
 
-    public function handle_release_alibaba_url()
-    {
-        if (!class_exists('SSPU_Alibaba_Queue')) {
-            wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
+        // Create background image (full image)
+        $background_image = imagecreatetruecolor($width, $height);
+        imagecopy($background_image, $source_image, 0, 0, 0, 0, $width, $height);
+
+        // Create mask image (original image with cropped area transparent)
+        $mask_image = imagecreatetruecolor($width, $height);
+        imagealphablending($mask_image, false);
+        imagesavealpha($mask_image, true);
+
+        imagecopy($mask_image, $source_image, 0, 0, 0, 0, $width, $height);
+
+        // Make the cropped area transparent in the mask image
+        $transparent = imagecolorallocatealpha($mask_image, 0, 0, 0, 127);
+        imagefilledrectangle($mask_image, $crop_x, $crop_y,
+            $crop_x + $crop_width,
+            $crop_y + $crop_height,
+            $transparent);
+
+        $upload_dir = wp_upload_dir();
+        $base_name = pathinfo($image_path, PATHINFO_FILENAME);
+        $timestamp = time();
+
+        $background_filename = $base_name . '_background_' . $timestamp . '.png';
+        $background_path = $upload_dir['path'] . '/' . $background_filename;
+
+        if (!wp_mkdir_p($upload_dir['path'])) {
+            imagedestroy($source_image);
+            imagedestroy($background_image);
+            imagedestroy($mask_image);
+            wp_send_json_error(['message' => 'Unable to create upload directory.']);
             return;
         }
-        $queue = new SSPU_Alibaba_Queue();
-        $queue->handle_release_url();
-    }
 
-    public function handle_retrieve_alibaba_images()
-    {
-        if (!class_exists('SSPU_Image_Retriever')) {
-            wp_send_json_error(['message' => 'Image Retriever class not found.']);
+        imagepng($background_image, $background_path, 9);
+
+        $mask_filename = $base_name . '_mask_' . $timestamp . '.png';
+        $mask_path = $upload_dir['path'] . '/' . $mask_filename;
+        imagepng($mask_image, $mask_path, 9);
+
+        // Destroy image resources to free up memory
+        imagedestroy($source_image);
+        imagedestroy($background_image);
+        imagedestroy($mask_image);
+
+        // Create WordPress attachments for the new images
+        $background_attachment_id = $this->create_attachment($background_path, $background_filename, 'Design Tool Background - ' . $base_name);
+        $mask_attachment_id = $this->create_attachment($mask_path, $mask_filename, 'Design Tool Mask - ' . $base_name);
+
+        if (!$background_attachment_id || !$mask_attachment_id) {
+            @unlink($background_path);
+            @unlink($mask_path);
+            wp_send_json_error(['message' => 'Failed to create WordPress attachments for generated images.']);
             return;
         }
-        $retriever = new SSPU_Image_Retriever();
-        $retriever->handle_retrieve_images();
+
+        $background_url = wp_get_attachment_url($background_attachment_id);
+        $mask_url = wp_get_attachment_url($mask_attachment_id);
+
+        if (class_exists('SSPU_Analytics')) {
+            $analytics = new SSPU_Analytics();
+            $analytics->log_activity(get_current_user_id(), 'design_files_created', [
+                'original_image_id' => $image_id,
+                'background_id' => $background_attachment_id,
+                'mask_id' => $mask_attachment_id,
+                'crop_area' => $mask_coordinates
+            ]);
+        }
+
+        wp_send_json_success([
+            'background_url' => $background_url,
+            'mask_url' => $mask_url,
+            'background_id' => $background_attachment_id,
+            'mask_id' => $mask_attachment_id,
+            'message' => 'Design files created successfully'
+        ]);
     }
 
-    public function handle_download_external_image()
-    {
+    /**
+     * Handle download external image - IMPLEMENTED DIRECTLY
+     */
+    public function handle_download_external_image() {
         error_log('[SSPU Download] ===== DOWNLOAD REQUEST START =====');
 
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
@@ -1386,7 +1200,7 @@ class SSPU_Admin_Ajax
 
         $attachment_id = media_handle_sideload($file_array, $post_id, null, [
             'post_title' => $filename,
-            'post_content' => 'Downloaded from external source: ' . $image_url, // More informative content
+            'post_content' => 'Downloaded from external source: ' . $image_url,
             'post_status' => 'inherit'
         ]);
 
@@ -1422,8 +1236,398 @@ class SSPU_Admin_Ajax
         ]);
     }
 
-    public function handle_ai_edit_image()
-    {
+    // Delegate remaining handlers to their respective classes
+    public function handle_get_current_alibaba_url() {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $user_id = get_current_user_id();
+        if (class_exists('SSPU_Alibaba_Queue')) {
+            $assignment = SSPU_Alibaba_Queue::get_user_assignment($user_id);
+            if ($assignment) {
+                wp_send_json_success([
+                    'url' => $assignment->url,
+                    'queue_id' => $assignment->queue_id,
+                    'assigned_at' => $assignment->assigned_at
+                ]);
+                return;
+            }
+        }
+
+        wp_send_json_error(['message' => 'No URL assigned']);
+    }
+
+    public function handle_fetch_alibaba_product_name() {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $alibaba_url = isset($_POST['alibaba_url']) ? esc_url_raw($_POST['alibaba_url']) : '';
+
+        if (empty($alibaba_url)) {
+            wp_send_json_error(['message' => 'No URL provided']);
+            return;
+        }
+
+        $response = wp_remote_get($alibaba_url, ['timeout' => 30]);
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(['message' => 'Failed to fetch page: ' . $response->get_error_message()]);
+            return;
+        }
+
+        $body = wp_remote_retrieve_body($response);
+
+        preg_match('/<h1[^>]*class="title"[^>]*>(.*?)<\/h1>/is', $body, $matches_class);
+        preg_match('/<h1[^>]*itemprop="name"[^>]*>(.*?)<\/h1>/is', $body, $matches_itemprop);
+        preg_match('/<h1[^>]*>(.*?)<\/h1>/is', $body, $matches_generic);
+
+        $product_name = '';
+        if (!empty($matches_class[1])) {
+            $product_name = $matches_class[1];
+        } elseif (!empty($matches_itemprop[1])) {
+            $product_name = $matches_itemprop[1];
+        } elseif (!empty($matches_generic[1])) {
+            $product_name = $matches_generic[1];
+        }
+
+        if (!empty($product_name)) {
+            $product_name = strip_tags($product_name);
+            $product_name = html_entity_decode($product_name, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $product_name = trim($product_name);
+            $product_name = preg_replace('/\s+/', ' ', $product_name);
+
+            wp_send_json_success(['product_name' => $product_name]);
+        } else {
+            wp_send_json_error(['message' => 'Could not find product title on the Alibaba page. The page structure might have changed.']);
+        }
+    }
+
+    public function handle_detect_color() {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $openai_api_key = get_option('sspu_openai_api_key');
+        if (empty($openai_api_key)) {
+            wp_send_json_error(['message' => 'OpenAI API key not configured']);
+            return;
+        }
+
+        $image_data = isset($_POST['image_data']) ? $_POST['image_data'] : '';
+
+        if (empty($image_data)) {
+            wp_send_json_error(['message' => 'No image data provided']);
+            return;
+        }
+
+        if (strpos($image_data, 'data:image/') !== 0) {
+            wp_send_json_error(['message' => 'Invalid image data format. Expected base64 image URL.']);
+            return;
+        }
+
+        $messages = [
+            [
+                'role' => 'user',
+                'content' => [
+                    [
+                        'type' => 'text',
+                        'text' => 'Look at this product image and identify the primary color. Return ONLY the color name in 1-2 words. Examples: Red, Blue, Light Green, Dark Brown, White, Black. Do not include any other text or explanation.'
+                    ],
+                    [
+                        'type' => 'image_url',
+                        'image_url' => ['url' => $image_data]
+                    ]
+                ]
+            ]
+        ];
+
+        $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+            'headers' => [
+                'Authorization' => 'Bearer ' . $openai_api_key,
+                'Content-Type' => 'application/json',
+            ],
+            'body' => json_encode([
+                'model' => 'gpt-4o',
+                'messages' => $messages,
+                'max_tokens' => 50
+            ]),
+            'timeout' => 30
+        ]);
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(['message' => 'API request failed: ' . $response->get_error_message()]);
+            return;
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (isset($body['choices'][0]['message']['content'])) {
+            $color = trim($body['choices'][0]['message']['content']);
+            $color = preg_replace('/[^a-zA-Z\s]/', '', $color);
+            $color = trim($color);
+
+            if (!empty($color)) {
+                wp_send_json_success(['color' => $color]);
+            } else {
+                wp_send_json_error(['message' => 'Could not determine color from image. AI response was empty or unparseable.']);
+            }
+        } else {
+            $error_message = 'Failed to detect color. AI response malformed.';
+            if (isset($body['error']['message'])) {
+                $error_message .= ': ' . $body['error']['message'];
+            }
+            wp_send_json_error(['message' => $error_message]);
+        }
+    }
+
+    public function handle_fetch_alibaba_moq() {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $alibaba_url = isset($_POST['alibaba_url']) ? esc_url_raw($_POST['alibaba_url']) : '';
+
+        if (empty($alibaba_url)) {
+            wp_send_json_error(['message' => 'No URL provided']);
+            return;
+        }
+
+        if (!class_exists('SSPU_Image_Retriever')) {
+            wp_send_json_error(['message' => 'Image Retriever class not found.']);
+            return;
+        }
+
+        $retriever = new SSPU_Image_Retriever();
+
+        // Check if the method exists before calling it
+        if (!method_exists($retriever, 'fetch_alibaba_moq')) {
+            wp_send_json_error(['message' => 'MOQ fetching method not available.']);
+            return;
+        }
+
+        $moq_data = $retriever->fetch_alibaba_moq($alibaba_url);
+
+        if ($moq_data && isset($moq_data['moq'])) {
+            if (class_exists('SSPU_Analytics')) {
+                $analytics = new SSPU_Analytics();
+                $analytics->log_activity(get_current_user_id(), 'alibaba_moq_fetched', [
+                    'url' => $alibaba_url,
+                    'moq' => $moq_data['moq'],
+                    'unit' => $moq_data['unit']
+                ]);
+            }
+
+            wp_send_json_success([
+                'moq' => $moq_data['moq'],
+                'unit' => $moq_data['unit'],
+                'message' => sprintf('MOQ found: %d %s', $moq_data['moq'], $moq_data['unit'])
+            ]);
+        } else {
+            wp_send_json_error(['message' => 'Could not find MOQ on the page. The page structure might have changed.']);
+        }
+    }
+
+    public function handle_fetch_alibaba_description() {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $alibaba_url = isset($_POST['alibaba_url']) ? esc_url_raw($_POST['alibaba_url']) : '';
+
+        if (empty($alibaba_url)) {
+            wp_send_json_error(['message' => 'No URL provided']);
+            return;
+        }
+
+        if (!class_exists('SSPU_Image_Retriever')) {
+            wp_send_json_error(['message' => 'Image Retriever class not found.']);
+            return;
+        }
+
+        $retriever = new SSPU_Image_Retriever();
+
+        // Check if the method exists before calling it
+        if (!method_exists($retriever, 'fetch_alibaba_description')) {
+            wp_send_json_error(['message' => 'Description fetching method not available.']);
+            return;
+        }
+
+        $description_data = $retriever->fetch_alibaba_description($alibaba_url);
+
+        if ($description_data && (!empty($description_data['attributes']) || !empty($description_data['description']) || !empty($description_data['features']))) {
+            $html_content = '';
+
+            if (!empty($description_data['attributes'])) {
+                // Check if format method exists
+                if (method_exists($retriever, 'format_attributes_as_table')) {
+                    $html_content .= $retriever->format_attributes_as_table($description_data['attributes']);
+                } else {
+                    // Fallback formatting
+                    $html_content .= '<table class="attributes-table">';
+                    foreach ($description_data['attributes'] as $key => $value) {
+                        $html_content .= '<tr><td><strong>' . esc_html($key) . '</strong></td><td>' . esc_html($value) . '</td></tr>';
+                    }
+                    $html_content .= '</table>';
+                }
+            }
+
+            if (!empty($description_data['description'])) {
+                $html_content .= '<p>' . wp_kses_post($description_data['description']) . '</p>';
+            }
+
+            if (!empty($description_data['features'])) {
+                $html_content .= '<h4>Product Features:</h4><ul>';
+                foreach ($description_data['features'] as $feature) {
+                    $html_content .= '<li>' . wp_kses_post($feature) . '</li>';
+                }
+                $html_content .= '</ul>';
+            }
+
+            if (class_exists('SSPU_Analytics')) {
+                $analytics = new SSPU_Analytics();
+                $analytics->log_activity(get_current_user_id(), 'alibaba_description_fetched', [
+                    'url' => $alibaba_url,
+                    'attributes_count' => count($description_data['attributes']),
+                    'features_count' => count($description_data['features'])
+                ]);
+            }
+
+            wp_send_json_success([
+                'html' => $html_content,
+                'attributes' => $description_data['attributes'],
+                'features' => $description_data['features'],
+                'description' => $description_data['description'],
+                'message' => sprintf('Found %d product attributes', count($description_data['attributes']))
+            ]);
+        } else {
+            wp_send_json_error(['message' => 'Could not find product details on the page. The page structure might have changed or content is missing.']);
+        }
+    }
+
+    // Template handlers
+    public function handle_get_single_template_content() {
+        check_ajax_referer('sspu_ajax_nonce', 'nonce');
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
+        }
+
+        $template_id = absint($_POST['template_id']);
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'sspu_image_templates';
+        $template_data = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$table_name} WHERE template_id = %d",
+            $template_id
+        ));
+
+        if (!$template_data) {
+            wp_send_json_error(['message' => 'Template not found']);
+            return;
+        }
+
+        wp_send_json_success([
+            'name' => sanitize_text_field($template_data->name),
+            'content' => sanitize_textarea_field($template_data->prompt)
+        ]);
+    }
+
+    // Analytics proxy handlers
+    public function handle_get_analytics_proxy() {
+        if (!class_exists('SSPU_Analytics')) {
+            wp_send_json_error(['message' => 'Analytics class not found.']);
+            return;
+        }
+        $analytics = new SSPU_Analytics();
+        $analytics->handle_get_analytics();
+    }
+
+    public function handle_export_analytics() {
+        wp_send_json_error(['message' => 'Export functionality not yet implemented']);
+    }
+
+    public function handle_get_user_activity_proxy() {
+        if (!class_exists('SSPU_Analytics')) {
+            wp_send_json_error(['message' => 'Analytics class not found.']);
+            return;
+        }
+        $analytics = new SSPU_Analytics();
+        $analytics->handle_get_user_activity();
+    }
+
+    public function handle_global_search_proxy() {
+        if (!class_exists('SSPU_Search')) {
+            wp_send_json_error(['message' => 'Search class not found.']);
+            return;
+        }
+        $search = new SSPU_Search();
+        $search->handle_global_search();
+    }
+
+    public function handle_get_search_filters_proxy() {
+        if (!class_exists('SSPU_Search')) {
+            wp_send_json_error(['message' => 'Search class not found.']);
+            return;
+        }
+        $search = new SSPU_Search();
+        $search->handle_get_search_filters();
+    }
+
+    // Alibaba queue handlers
+    public function handle_request_alibaba_url() {
+        if (!class_exists('SSPU_Alibaba_Queue')) {
+            wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
+            return;
+        }
+        $queue = new SSPU_Alibaba_Queue();
+        $queue->handle_request_url();
+    }
+
+    public function handle_complete_alibaba_url() {
+        if (!class_exists('SSPU_Alibaba_Queue')) {
+            wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
+            return;
+        }
+        $queue = new SSPU_Alibaba_Queue();
+        $queue->handle_complete_url();
+    }
+
+    public function handle_release_alibaba_url() {
+        if (!class_exists('SSPU_Alibaba_Queue')) {
+            wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
+            return;
+        }
+        $queue = new SSPU_Alibaba_Queue();
+        $queue->handle_release_url();
+    }
+
+    // Image retriever handlers
+    public function handle_retrieve_alibaba_images() {
+        if (!class_exists('SSPU_Image_Retriever')) {
+            wp_send_json_error(['message' => 'Image Retriever class not found.']);
+            return;
+        }
+        $retriever = new SSPU_Image_Retriever();
+        $retriever->handle_retrieve_images();
+    }
+
+    // AI handlers
+    public function handle_ai_edit_image() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
@@ -1432,8 +1636,7 @@ class SSPU_Admin_Ajax
         $ai_editor->handle_ai_edit();
     }
 
-    public function handle_get_chat_history()
-    {
+    public function handle_get_chat_history() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
@@ -1442,8 +1645,7 @@ class SSPU_Admin_Ajax
         $ai_editor->handle_get_chat_history();
     }
 
-    public function handle_save_edited_image()
-    {
+    public function handle_save_edited_image() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
@@ -1452,8 +1654,8 @@ class SSPU_Admin_Ajax
         $ai_editor->handle_save_edited_image();
     }
 
-    public function handle_get_image_templates()
-    {
+    // Template handlers
+    public function handle_get_image_templates() {
         if (!class_exists('SSPU_Image_Templates')) {
             wp_send_json_error(['message' => 'Image Templates class not found.']);
             return;
@@ -1462,8 +1664,7 @@ class SSPU_Admin_Ajax
         $templates->handle_get_templates();
     }
 
-    public function handle_save_image_template()
-    {
+    public function handle_save_image_template() {
         if (!class_exists('SSPU_Image_Templates')) {
             wp_send_json_error(['message' => 'Image Templates class not found.']);
             return;
@@ -1472,8 +1673,7 @@ class SSPU_Admin_Ajax
         $templates->handle_save_template();
     }
 
-    public function handle_delete_image_template()
-    {
+    public function handle_delete_image_template() {
         if (!class_exists('SSPU_Image_Templates')) {
             wp_send_json_error(['message' => 'Image Templates class not found.']);
             return;
@@ -1482,11 +1682,8 @@ class SSPU_Admin_Ajax
         $templates->handle_delete_template();
     }
 
-    /**
-     * Mimic handlers
-     */
-    public function handle_get_mimic_images()
-    {
+    // Mimic handlers
+    public function handle_get_mimic_images() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1522,7 +1719,7 @@ class SSPU_Admin_Ajax
         foreach ($attachments as $attachment) {
             $mimic_images[] = [
                 'mimic_id' => $attachment->ID,
-                'image_id' => $attachment->ID, // Keeping both for clarity/flexibility
+                'image_id' => $attachment->ID,
                 'name' => $attachment->post_title,
                 'description' => $attachment->post_content,
                 'image_url' => wp_get_attachment_url($attachment->ID),
@@ -1535,210 +1732,13 @@ class SSPU_Admin_Ajax
         wp_send_json_success(['mimic_images' => $mimic_images]);
     }
 
-    public function handle_mimic_image()
-    {
+    public function handle_mimic_image() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
         }
         $ai_editor = SSPU_AI_Image_Editor::get_instance();
         $ai_editor->handle_mimic_style();
-    }
-
-    /**
-     * Scrape Alibaba variants handler
-     */
-    public function handle_scrape_alibaba_variants()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-        if (!current_user_can('upload_shopify_products')) {
-            wp_send_json_error(['message' => 'Permission denied.']);
-            return;
-        }
-
-        $url = isset($_POST['url']) ? sanitize_url($_POST['url']) : '';
-        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
-            wp_send_json_error(['message' => 'A valid URL is required.']);
-            return;
-        }
-
-        if (!class_exists('SSPU_Image_Retriever')) {
-            wp_send_json_error(['message' => 'Image Retriever class not found.']);
-            return;
-        }
-        $image_retriever = new SSPU_Image_Retriever();
-        $variants_data = $image_retriever->scrape_variants_from_url($url);
-
-        if ($variants_data === false) {
-            wp_send_json_error(['message' => 'Failed to retrieve or parse variant data from the URL. The page structure might have changed.']);
-            return;
-        }
-
-        if (empty($variants_data)) {
-            wp_send_json_error(['message' => 'No variant data with images found on the page.']);
-            return;
-        }
-
-        wp_send_json_success(['variants' => $variants_data]);
-    }
-
-    /**
-     * Create masked image handler
-     */
-    public function handle_create_masked_image()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-
-        if (!current_user_can('upload_shopify_products')) {
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-
-        $image_id = absint($_POST['image_id']);
-        $mask_coordinates = $_POST['mask_coordinates']; // Needs sanitization if values are not numeric
-
-        if (!$image_id || !is_array($mask_coordinates) || empty($mask_coordinates)) {
-            wp_send_json_error(['message' => 'Missing required parameters or invalid mask coordinates.']);
-            return;
-        }
-
-        // Sanitize coordinates explicitly
-        $crop_x = intval($mask_coordinates['x'] ?? 0);
-        $crop_y = intval($mask_coordinates['y'] ?? 0);
-        $crop_width = intval($mask_coordinates['width'] ?? 0);
-        $crop_height = intval($mask_coordinates['height'] ?? 0);
-
-        $image_path = get_attached_file($image_id);
-        if (!$image_path || !file_exists($image_path)) {
-            wp_send_json_error(['message' => 'Image file not found on server.']);
-            return;
-        }
-
-        $image_info = getimagesize($image_path);
-        if (!$image_info) {
-            wp_send_json_error(['message' => 'Invalid image file or unable to get image dimensions.']);
-            return;
-        }
-
-        $mime_type = $image_info['mime'];
-        $width = $image_info[0];
-        $height = $image_info[1];
-
-        // Create image resource from source image
-        $source_image = null;
-        switch ($mime_type) {
-            case 'image/jpeg':
-                $source_image = imagecreatefromjpeg($image_path);
-                break;
-            case 'image/png':
-                $source_image = imagecreatefrompng($image_path);
-                break;
-            case 'image/gif':
-                $source_image = imagecreatefromgif($image_path);
-                break;
-            case 'image/webp':
-                // Check if webp functions are available
-                if (function_exists('imagecreatefromwebp')) {
-                    $source_image = imagecreatefromwebp($image_path);
-                }
-                break;
-            default:
-                wp_send_json_error(['message' => 'Unsupported image type: ' . $mime_type]);
-                return;
-        }
-
-        if (!$source_image) {
-            wp_send_json_error(['message' => 'Failed to create image resource from original file.']);
-            return;
-        }
-
-        // Adjust crop coordinates to stay within image bounds
-        $crop_x = max(0, $crop_x);
-        $crop_y = max(0, $crop_y);
-        $crop_width = min($crop_width, $width - $crop_x);
-        $crop_height = min($crop_height, $height - $crop_y);
-
-        if ($crop_width <= 0 || $crop_height <= 0) {
-            imagedestroy($source_image);
-            wp_send_json_error(['message' => 'Invalid crop area dimensions.']);
-            return;
-        }
-
-        // Create background image (full image)
-        $background_image = imagecreatetruecolor($width, $height);
-        imagecopy($background_image, $source_image, 0, 0, 0, 0, $width, $height);
-
-        // Create mask image (original image with cropped area transparent)
-        $mask_image = imagecreatetruecolor($width, $height);
-        imagealphablending($mask_image, false); // Disable blending for proper alpha handling
-        imagesavealpha($mask_image, true); // Save full alpha channel
-
-        imagecopy($mask_image, $source_image, 0, 0, 0, 0, $width, $height);
-
-        // Make the cropped area transparent in the mask image
-        $transparent = imagecolorallocatealpha($mask_image, 0, 0, 0, 127); // 127 is full transparency
-        imagefilledrectangle($mask_image, $crop_x, $crop_y,
-            $crop_x + $crop_width, // Corrected to use crop_width/height directly
-            $crop_y + $crop_height,
-            $transparent);
-
-        $upload_dir = wp_upload_dir();
-        $base_name = pathinfo($image_path, PATHINFO_FILENAME);
-        $timestamp = time(); // Use current timestamp for unique filenames
-
-        $background_filename = $base_name . '_background_' . $timestamp . '.png';
-        $background_path = $upload_dir['path'] . '/' . $background_filename;
-        // Check if directory exists and is writable
-        if (!wp_mkdir_p($upload_dir['path'])) {
-            imagedestroy($source_image);
-            imagedestroy($background_image);
-            imagedestroy($mask_image);
-            wp_send_json_error(['message' => 'Unable to create upload directory.']);
-            return;
-        }
-        imagepng($background_image, $background_path, 9); // Quality 9 for PNG
-
-        $mask_filename = $base_name . '_mask_' . $timestamp . '.png';
-        $mask_path = $upload_dir['path'] . '/' . $mask_filename;
-        imagepng($mask_image, $mask_path, 9);
-
-        // Destroy image resources to free up memory
-        imagedestroy($source_image);
-        imagedestroy($background_image);
-        imagedestroy($mask_image);
-
-        // Create WordPress attachments for the new images
-        $background_attachment_id = $this->create_attachment($background_path, $background_filename, 'Design Tool Background - ' . $base_name);
-        $mask_attachment_id = $this->create_attachment($mask_path, $mask_filename, 'Design Tool Mask - ' . $base_name);
-
-        if (!$background_attachment_id || !$mask_attachment_id) {
-            // Clean up files if attachment creation fails
-            @unlink($background_path);
-            @unlink($mask_path);
-            wp_send_json_error(['message' => 'Failed to create WordPress attachments for generated images.']);
-            return;
-        }
-
-        $background_url = wp_get_attachment_url($background_attachment_id);
-        $mask_url = wp_get_attachment_url($mask_attachment_id);
-
-        if (class_exists('SSPU_Analytics')) {
-            $analytics = new SSPU_Analytics();
-            $analytics->log_activity(get_current_user_id(), 'design_files_created', [
-                'original_image_id' => $image_id,
-                'background_id' => $background_attachment_id,
-                'mask_id' => $mask_attachment_id,
-                'crop_area' => $mask_coordinates
-            ]);
-        }
-
-        wp_send_json_success([
-            'background_url' => $background_url,
-            'mask_url' => $mask_url,
-            'background_id' => $background_attachment_id,
-            'mask_id' => $mask_attachment_id,
-            'message' => 'Design files created successfully'
-        ]);
     }
 
     /**
@@ -1794,7 +1794,6 @@ class SSPU_Admin_Ajax
 
             wp_send_json_success($result);
         } else {
-            // Provide more specific error if available from Shopify API
             $error_message = 'Failed to search products.';
             if (isset($response['errors'])) {
                 $error_message .= ' Shopify Error: ' . (is_array($response['errors']) ? json_encode($response['errors']) : $response['errors']);
@@ -1856,7 +1855,7 @@ class SSPU_Admin_Ajax
         }
 
         $product_id = absint($_POST['product_id']);
-        $product_data = $_POST['product_data']; // This needs deep sanitization
+        $product_data = $_POST['product_data'];
 
         if (!$product_id || !is_array($product_data) || empty($product_data)) {
             wp_send_json_error(['message' => 'Missing or invalid required data for product update.']);
@@ -1937,7 +1936,6 @@ class SSPU_Admin_Ajax
                 $print_methods_keys = ['silkscreen', 'uvprint', 'embroidery', 'sublimation', 'emboss', 'laserengrave'];
                 foreach ($print_methods_keys as $method) {
                     $key_with_namespace = 'custom.' . $method;
-                    // Check if the current method's full key is in the received print_methods array
                     $value = in_array($key_with_namespace, $product_data['print_methods']) ? 'true' : 'false';
 
                     $metafield_data = [
@@ -1958,7 +1956,6 @@ class SSPU_Admin_Ajax
 
                     // Volume tiers
                     if ($variant_id && isset($variant_data['volume_tiers']) && is_array($variant_data['volume_tiers'])) {
-                        // Ensure volume tiers are properly sanitized. Each tier should have min_quantity and price.
                         $sanitized_tiers = [];
                         foreach ($variant_data['volume_tiers'] as $tier) {
                             if (isset($tier['min_quantity']) && isset($tier['price'])) {
@@ -1970,10 +1967,10 @@ class SSPU_Admin_Ajax
                         }
 
                         $metafield = [
-                            'namespace' => 'custom', // Or a more specific namespace if needed
+                            'namespace' => 'custom',
                             'key' => 'volume_tiers',
                             'value' => json_encode($sanitized_tiers),
-                            'type' => 'json_string' // Use 'json_string' if Shopify expects a string, 'json' if it handles native JSON
+                            'type' => 'json_string'
                         ];
                         $shopify_api->update_variant_metafield($variant_id, $metafield);
                     }
@@ -2010,7 +2007,6 @@ class SSPU_Admin_Ajax
             // Update the transient with the newly saved data
             set_transient('sspu_editing_product_' . get_current_user_id(), $response['product'], HOUR_IN_SECONDS);
 
-
             wp_send_json_success([
                 'message' => 'Product updated successfully',
                 'product' => $response['product'],
@@ -2034,7 +2030,7 @@ class SSPU_Admin_Ajax
         }
 
         $product_id = absint($_POST['product_id']);
-        $image_ids = array_map('absint', $_POST['image_ids']); // Ensure IDs are integers
+        $image_ids = array_map('absint', $_POST['image_ids']);
 
         if (!$product_id || empty($image_ids)) {
             wp_send_json_error(['message' => 'Missing product ID or image IDs for reordering.']);
@@ -2085,7 +2081,7 @@ class SSPU_Admin_Ajax
         $shopify_api = new SSPU_Shopify_API();
         $response = $shopify_api->delete_product_image($product_id, $image_id);
 
-        if (!isset($response['errors'])) { // Shopify API usually returns an empty array or 200 status for success
+        if (!isset($response['errors'])) {
             wp_send_json_success(['message' => 'Image deleted successfully']);
         } else {
             $error_message = 'Failed to delete image.';
@@ -2175,7 +2171,7 @@ class SSPU_Admin_Ajax
         }
 
         $product_id = absint($_POST['product_id']);
-        $metafield = $_POST['metafield']; // This needs deep sanitization
+        $metafield = $_POST['metafield'];
 
         if (!$product_id || !is_array($metafield) || empty($metafield)) {
             wp_send_json_error(['message' => 'Missing product ID or metafield data.']);
@@ -2189,7 +2185,7 @@ class SSPU_Admin_Ajax
             'type' => sanitize_text_field($metafield['type'] ?? '')
         ];
 
-        if (isset($metafield['id'])) { // Metafield ID is present for existing metafields
+        if (isset($metafield['id'])) {
             $clean_metafield['id'] = absint($metafield['id']);
         }
 
@@ -2324,7 +2320,6 @@ class SSPU_Admin_Ajax
             }
         }
 
-        // Re-fetch current collections to confirm state
         $final_collections = $shopify_api->get_product_collections($product_id);
         wp_send_json_success(['message' => 'Collections updated', 'current_collections' => $final_collections]);
     }
@@ -2341,7 +2336,6 @@ class SSPU_Admin_Ajax
         }
 
         $product_id = absint($_POST['product_id']);
-        // Assuming draft_data is a JSON string, decode it.
         $draft_data = json_decode(stripslashes($_POST['draft_data']), true);
 
         if (!$product_id || !is_array($draft_data)) {
@@ -2350,23 +2344,49 @@ class SSPU_Admin_Ajax
         }
 
         $draft_key = 'sspu_live_edit_draft_' . get_current_user_id() . '_' . $product_id;
-        set_transient($draft_key, $draft_data, DAY_IN_SECONDS); // Store for 1 day
+        set_transient($draft_key, $draft_data, DAY_IN_SECONDS);
 
         wp_send_json_success(['message' => 'Draft saved for live editor']);
     }
 
-    public function handle_mimic_all_variants()
-    {
-        if (!class_exists('SSPU_AI_Image_Editor')) {
-            wp_send_json_error(['message' => 'AI Image Editor class not found.']);
-            return;
+    /**
+     * Helper method to create WordPress attachment
+     */
+    private function create_attachment($file_path, $filename, $title = '') {
+        if (!file_exists($file_path)) {
+            error_log('SSPU Helper: File not found for attachment creation: ' . $file_path);
+            return false;
         }
-        $ai_editor = SSPU_AI_Image_Editor::get_instance();
-        $ai_editor->handle_mimic_all_variants();
+
+        $wp_filetype = wp_check_filetype($filename, null);
+        if (empty($wp_filetype['type'])) {
+            error_log('SSPU Helper: Could not determine file type for attachment: ' . $filename);
+            return false;
+        }
+
+        $attachment = [
+            'post_mime_type' => $wp_filetype['type'],
+            'post_title' => $title ?: sanitize_file_name(pathinfo($filename, PATHINFO_FILENAME)),
+            'post_content' => '',
+            'post_status' => 'inherit'
+        ];
+
+        $attach_id = wp_insert_attachment($attachment, $file_path);
+
+        if (is_wp_error($attach_id)) {
+            error_log('SSPU Helper: wp_insert_attachment failed: ' . $attach_id->get_error_message());
+            return false;
+        }
+
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        $attach_data = wp_generate_attachment_metadata($attach_id, $file_path);
+        wp_update_attachment_metadata($attach_id, $attach_data);
+
+        return $attach_id;
     }
 
     /**
-     * Helper methods
+     * Download image from URL helper method
      */
     private function download_image_from_url($image_url, $filename)
     {
@@ -2379,7 +2399,7 @@ class SSPU_Admin_Ajax
         require_once(ABSPATH . 'wp-admin/includes/file.php');
         require_once(ABSPATH . 'wp-admin/includes/image.php');
 
-        $tmp = download_url($image_url, 60); // Increased timeout to 60 seconds
+        $tmp = download_url($image_url, 60);
 
         if (is_wp_error($tmp)) {
             error_log('SSPU Helper Download Error: ' . $tmp->get_error_message() . ' for URL: ' . $image_url);
@@ -2398,7 +2418,6 @@ class SSPU_Admin_Ajax
             return false;
         }
 
-
         $file_info = wp_check_filetype($tmp);
         if (!$file_info['ext']) {
             $url_ext = pathinfo(parse_url($image_url, PHP_URL_PATH), PATHINFO_EXTENSION);
@@ -2406,7 +2425,6 @@ class SSPU_Admin_Ajax
                 $file_info['ext'] = strtolower($url_ext);
                 $file_info['type'] = 'image/' . ($file_info['ext'] === 'jpg' ? 'jpeg' : $file_info['ext']);
             } else {
-                // Fallback if no extension can be determined
                 $file_info['ext'] = 'jpg';
                 $file_info['type'] = 'image/jpeg';
             }
@@ -2415,14 +2433,14 @@ class SSPU_Admin_Ajax
         $file_array = [
             'name' => sanitize_file_name($filename) . '.' . $file_info['ext'],
             'tmp_name' => $tmp,
-            'type' => $file_info['type'], // Added type for media_handle_sideload
-            'error' => 0, // Assume no error as download_url already checked
-            'size' => filesize($tmp), // Added size
+            'type' => $file_info['type'],
+            'error' => 0,
+            'size' => filesize($tmp),
         ];
 
         $attachment_id = media_handle_sideload($file_array, 0, null, [
             'post_title' => ucwords(str_replace('-', ' ', $filename)),
-            'post_content' => 'Downloaded via SSPU from external source: ' . $image_url, // More detailed content
+            'post_content' => 'Downloaded via SSPU from external source: ' . $image_url,
             'post_status' => 'inherit',
         ]);
 
@@ -2440,42 +2458,6 @@ class SSPU_Admin_Ajax
         ];
     }
 
-    private function create_attachment($file_path, $filename, $title = '')
-    {
-        // Check if file exists before trying to create attachment
-        if (!file_exists($file_path)) {
-            error_log('SSPU Helper: File not found for attachment creation: ' . $file_path);
-            return false;
-        }
-
-        $wp_filetype = wp_check_filetype($filename, null);
-        if (empty($wp_filetype['type'])) {
-            error_log('SSPU Helper: Could not determine file type for attachment: ' . $filename);
-            return false;
-        }
-
-        $attachment = [
-            'post_mime_type' => $wp_filetype['type'],
-            'post_title' => $title ?: sanitize_file_name(pathinfo($filename, PATHINFO_FILENAME)), // Use filename without extension
-            'post_content' => '',
-            'post_status' => 'inherit'
-        ];
-
-        // Insert the attachment post type
-        $attach_id = wp_insert_attachment($attachment, $file_path);
-
-        if (is_wp_error($attach_id)) {
-            error_log('SSPU Helper: wp_insert_attachment failed: ' . $attach_id->get_error_message());
-            return false;
-        }
-
-        require_once(ABSPATH . 'wp-admin/includes/image.php');
-        $attach_data = wp_generate_attachment_metadata($attach_id, $file_path);
-        wp_update_attachment_metadata($attach_id, $attach_data);
-
-        return $attach_id;
-    }
-
     /**
      * Calculate changes between original and new data
      */
@@ -2483,7 +2465,6 @@ class SSPU_Admin_Ajax
     {
         $changes = [];
 
-        // Return all new data keys if no original data to compare
         if (empty($original) || !is_array($original)) {
             return array_keys($new_data);
         }
@@ -2494,18 +2475,15 @@ class SSPU_Admin_Ajax
             $original_value = $original[$field] ?? null;
             $new_value = $new_data[$field] ?? null;
 
-            // Handle boolean types correctly
             if (is_bool($original_value) && is_bool($new_value)) {
                 if ($original_value !== $new_value) {
                     $changes[] = $field;
                 }
             } else if (is_string($original_value) && is_string($new_value)) {
-                // Trim and compare strings
                 if (trim($original_value) !== trim($new_value)) {
                     $changes[] = $field;
                 }
             } else {
-                // General comparison for other types
                 if ($original_value !== $new_value) {
                     $changes[] = $field;
                 }
@@ -2527,27 +2505,25 @@ class SSPU_Admin_Ajax
                     foreach ($variant_fields_to_check as $field) {
                         $orig_v_val = $original_variant[$field] ?? null;
                         $new_v_val = $new_variant[$field] ?? null;
-                        
-                        // Special handling for null vs empty string for non-required fields
+
                         if (($orig_v_val === null && $new_v_val === '') || ($orig_v_val === '' && $new_v_val === null)) {
                             // Consider them equal
                         } else if ($orig_v_val != $new_v_val) {
                             $changes[] = "variant_{$field}_" . $variant_id;
                         }
                     }
-                    // Check volume_tiers separately if they are stored as JSON strings
-                    $original_volume_tiers = json_decode($original_variant['metafields']['volume_tiers']['value'] ?? '[]', true); // Assuming metafields structure
+
+                    $original_volume_tiers = json_decode($original_variant['metafields']['volume_tiers']['value'] ?? '[]', true);
                     $new_volume_tiers = $new_variant['volume_tiers'] ?? [];
                     if (json_encode($original_volume_tiers) !== json_encode($new_volume_tiers)) {
                         $changes[] = "variant_volume_tiers_" . $variant_id;
                     }
 
                 } else if ($variant_id) {
-                    // New variant added
                     $changes[] = 'new_variant_' . $variant_id;
                 }
             }
-            // Check for deleted variants (if original has more variants than new_data with matching IDs)
+
             if (count($original['variants']) > count($new_data['variants'])) {
                  $new_variant_ids = array_column($new_data['variants'], 'id');
                  foreach($original['variants'] as $orig_variant){
@@ -2558,7 +2534,7 @@ class SSPU_Admin_Ajax
             }
         }
 
-        // Compare collections (simple array comparison)
+        // Compare collections
         if (isset($new_data['collection_ids']) && is_array($new_data['collection_ids']) && isset($original['collection_ids']) && is_array($original['collection_ids'])) {
             $original_collections = array_map('absint', $original['collection_ids']);
             $new_collections = array_map('absint', $new_data['collection_ids']);
@@ -2570,53 +2546,6 @@ class SSPU_Admin_Ajax
                 $changes[] = 'collections';
             }
         }
-        
-        // Compare SEO metafields (global title_tag, description_tag)
-        // This requires fetching actual metafields or storing them in the transient initially
-        // Assuming original product data includes 'metafields' array for comparison
-        $original_metafields = [];
-        if (isset($original['metafields']) && is_array($original['metafields'])) {
-            foreach ($original['metafields'] as $mf) {
-                $original_metafields[$mf['namespace'] . '.' . $mf['key']] = $mf['value'];
-            }
-        }
-        
-        // For seo_title / title_tag
-        $original_seo_title = $original_metafields['global.title_tag'] ?? '';
-        $new_seo_title = sanitize_text_field($new_data['seo_title'] ?? '');
-        if (trim($original_seo_title) !== trim($new_seo_title)) {
-            $changes[] = 'seo_title';
-        }
-
-        // For seo_description / description_tag
-        $original_seo_description = $original_metafields['global.description_tag'] ?? '';
-        $new_seo_description = sanitize_textarea_field($new_data['seo_description'] ?? '');
-        if (trim($original_seo_description) !== trim($new_seo_description)) {
-            $changes[] = 'seo_description';
-        }
-
-        // Print methods metafields
-        $original_print_methods = [];
-        $print_method_keys = ['silkscreen', 'uvprint', 'embroidery', 'sublimation', 'emboss', 'laserengrave'];
-        foreach ($print_method_keys as $method) {
-            $key_lookup = 'custom.' . $method;
-            $original_print_methods[$key_lookup] = ($original_metafields[$key_lookup] ?? 'false') === 'true';
-        }
-
-        $new_print_methods_array = $new_data['print_methods'] ?? []; // These come as 'custom.method'
-        $new_print_methods = [];
-        foreach ($print_method_keys as $method) {
-            $key_lookup = 'custom.' . $method;
-            $new_print_methods[$key_lookup] = in_array($key_lookup, $new_print_methods_array);
-        }
-
-        foreach ($print_method_keys as $method) {
-            $key_lookup = 'custom.' . $method;
-            if (($original_print_methods[$key_lookup] ?? false) !== ($new_print_methods[$key_lookup] ?? false)) {
-                $changes[] = "print_method_{$method}";
-            }
-        }
-
 
         return array_values(array_unique($changes));
     }

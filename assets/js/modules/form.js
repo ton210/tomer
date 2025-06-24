@@ -210,6 +210,9 @@ window.SSPU = window.SSPU || {};
         /**
          * Refresh the security nonce
          */
+        /**
+         * Refresh the security nonce - FIXED VERSION
+         */
         refreshNonce() {
             console.log('SSPU Form: Refreshing security nonce...');
 
@@ -219,12 +222,14 @@ window.SSPU = window.SSPU || {};
                 type: 'POST',
                 data: {
                     action: 'sspu_refresh_nonce',
-                    nonce: sspu_ajax.nonce // Use the general nonce for this request
+                    sspu_nonce: sspu_ajax.nonce  // FIXED: Use sspu_nonce instead of nonce
                 },
                 dataType: 'json'
             }).done((response) => {
                 if (response.success && response.data.nonce) {
+                    // Update both the hidden field and the global nonce
                     $('#sspu_nonce').val(response.data.nonce);
+                    sspu_ajax.nonce = response.data.nonce;  // ADDED: Update global nonce
                     console.log('SSPU Form: Nonce refreshed successfully');
                 } else {
                     console.warn('SSPU Form: Failed to refresh nonce:', response);
