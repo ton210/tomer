@@ -175,6 +175,105 @@ function sspu_handle_get_chat_history() {
 }
 
 /**
+ * Schedule daily Slack notifications
+ */
+add_action('init', function() {
+    if (!wp_next_scheduled('sspu_daily_slack_summary')) {
+        wp_schedule_event(strtotime('today 6:00 PM'), 'daily', 'sspu_daily_slack_summary');
+    }
+});
+
+/**
+ * Hook for daily Slack summary
+ */
+add_action('sspu_daily_slack_summary', 'sspu_send_daily_slack_summary');
+
+function sspu_send_daily_slack_summary() {
+    $webhook_url = get_option('sspu_slack_webhook_url');
+    
+    if (empty($webhook_url)) {
+        error_log('SSPU: Slack webhook URL not configured for daily summary');
+        return;
+    }
+    
+    // Get today's uploads from analytics
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'sspu_activity_log';
+    
+    // Check if table exists
+    if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") !== $table_name) {
+        error_log('SSPU: Activity log table does not exist');
+        return;
+    }
+    
+    $today = current_time('Y-m-d');
+    $results = $wpdb->get_results($wpdb->prepare(
+        "SELECT user_id, COUNT(*) as count, 
+         GROUP_CONCAT(JSON_UNQUOTE(JSON_EXTRACT(activity_data, '$.product_title')) SEPARATOR ', ') as products
+         FROM {$table_name}
+         WHERE activity_type = 'product_created'
+         AND DATE(activity_time) = %s
+         GROUP BY user_id",
+        $today
+    ));
+    
+    if (empty($results)) {
+        // No products uploaded today
+        $message = [
+            'text' => sprintf('📊 *Daily Upload Summary for %s*\n\nNo products were uploaded today.', $today),
+            'username' => 'Shopify Daily Summary',
+            'icon_emoji' => ':chart_with_downwards_trend:',
+            'mrkdwn' => true
+        ];
+    } else {
+        $total_products = 0;
+        $summary_lines = [];
+        
+        foreach ($results as $row) {
+            $user = get_userdata($row->user_id);
+            $username = $user ? ($user->display_name ?: $user->user_login) : 'Unknown User';
+            $total_products += $row->count;
+            
+            // Clean up product names
+            $products = $row->products ? str_replace(['\\', '"'], '', $row->products) : '';
+            $summary_lines[] = sprintf('• *%s* uploaded %d product(s): %s', 
+                $username, 
+                $row->count,
+                $products ?: 'N/A'
+            );
+        }
+        
+        $message = [
+            'text' => sprintf("📊 *Daily Upload Summary for %s*\n\n*Total products uploaded:* %d\n\n%s",
+                $today,
+                $total_products,
+                implode("\n", $summary_lines)
+            ),
+            'username' => 'Shopify Daily Summary',
+            'icon_emoji' => ':chart_with_upwards_trend:',
+            'mrkdwn' => true
+        ];
+    }
+    
+    $args = [
+        'body' => json_encode($message),
+        'headers' => [
+            'Content-Type' => 'application/json',
+        ],
+        'timeout' => 30,
+        'sslverify' => true,
+    ];
+    
+    $response = wp_remote_post($webhook_url, $args);
+    
+    if (is_wp_error($response)) {
+        error_log('SSPU: Failed to send daily Slack summary: ' . $response->get_error_message());
+    } else {
+        error_log('SSPU: Daily Slack summary sent successfully');
+    }
+}
+
+/**
  * Enqueue admin scripts and styles
  */
 add_action('admin_enqueue_scripts', 'sspu_enqueue_admin_assets');
@@ -208,6 +307,7 @@ function sspu_enqueue_admin_assets($hook) {
 add_filter('sspu_settings_tabs', 'sspu_add_ai_settings_tab');
 function sspu_add_ai_settings_tab($tabs) {
     $tabs['ai_editor'] = 'AI Image Editor';
+    $tabs['notifications'] = 'Notifications';
     return $tabs;
 }
 
@@ -228,9 +328,8 @@ function sspu_render_ai_settings_content() {
     $anthropic_key = get_option('sspu_anthropic_api_key', '');
     
     // Test connections
-    // Test connections
-$ai_editor = SSPU_AI_Image_Editor::get_instance();
-$connections = $ai_editor->test_connections();
+    $ai_editor = SSPU_AI_Image_Editor::get_instance();
+    $connections = $ai_editor->test_connections();
     ?>
     <h2>AI Image Editor Settings</h2>
     
@@ -344,6 +443,173 @@ $connections = $ai_editor->test_connections();
         </div>
     </div>
     <?php
+}
+
+/**
+ * Add Notifications settings tab content
+ */
+add_action('sspu_settings_content_notifications', 'sspu_render_notifications_settings_content');
+function sspu_render_notifications_settings_content() {
+    if (isset($_POST['submit_notification_settings'])) {
+        check_admin_referer('sspu_notification_settings');
+        
+        update_option('sspu_slack_webhook_url', esc_url_raw($_POST['slack_webhook_url']));
+        update_option('sspu_slack_notifications_enabled', isset($_POST['slack_notifications_enabled']) ? '1' : '0');
+        update_option('sspu_slack_daily_summary_enabled', isset($_POST['slack_daily_summary_enabled']) ? '1' : '0');
+        update_option('sspu_slack_daily_summary_time', sanitize_text_field($_POST['slack_daily_summary_time']));
+        
+        // Reschedule daily summary if time changed
+        wp_clear_scheduled_hook('sspu_daily_slack_summary');
+        if (get_option('sspu_slack_daily_summary_enabled') === '1') {
+            $time = get_option('sspu_slack_daily_summary_time', '18:00');
+            wp_schedule_event(strtotime('today ' . $time), 'daily', 'sspu_daily_slack_summary');
+        }
+        
+        echo '<div class="notice notice-success"><p>Notification settings saved!</p></div>';
+        
+        // Test notification if requested
+        if (isset($_POST['test_slack_notification'])) {
+            sspu_send_test_slack_notification();
+        }
+    }
+    
+    $webhook_url = get_option('sspu_slack_webhook_url', '');
+    $notifications_enabled = get_option('sspu_slack_notifications_enabled', '1');
+    $daily_summary_enabled = get_option('sspu_slack_daily_summary_enabled', '1');
+    $daily_summary_time = get_option('sspu_slack_daily_summary_time', '18:00');
+    ?>
+    <h2>Notification Settings</h2>
+    
+    <form method="post" action="">
+        <?php wp_nonce_field('sspu_notification_settings'); ?>
+        
+        <table class="form-table">
+            <tr>
+                <th scope="row">
+                    <label for="slack_webhook_url">Slack Webhook URL</label>
+                </th>
+                <td>
+                    <input type="url" id="slack_webhook_url" name="slack_webhook_url" 
+                           value="<?php echo esc_attr($webhook_url); ?>" 
+                           class="regular-text" placeholder="https://hooks.slack.com/services/..." />
+                    <p class="description">
+                        Enter your Slack webhook URL for notifications. 
+                        <a href="https://api.slack.com/messaging/webhooks" target="_blank">Learn how to create a webhook</a>
+                    </p>
+                    <?php if (!empty($webhook_url)): ?>
+                        <p>
+                            <button type="submit" name="test_slack_notification" class="button">
+                                Test Notification
+                            </button>
+                        </p>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">Instant Notifications</th>
+                <td>
+                    <label>
+                        <input type="checkbox" name="slack_notifications_enabled" value="1" 
+                               <?php checked($notifications_enabled, '1'); ?> />
+                        Enable instant Slack notifications when products are uploaded
+                    </label>
+                    <p class="description">
+                        Sends a notification immediately when a user uploads a product to Shopify
+                    </p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">Daily Summary</th>
+                <td>
+                    <label>
+                        <input type="checkbox" name="slack_daily_summary_enabled" value="1" 
+                               <?php checked($daily_summary_enabled, '1'); ?> />
+                        Enable daily summary notifications
+                    </label>
+                    <p class="description">
+                        Sends a summary of all products uploaded during the day
+                    </p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">
+                    <label for="slack_daily_summary_time">Daily Summary Time</label>
+                </th>
+                <td>
+                    <input type="time" id="slack_daily_summary_time" name="slack_daily_summary_time" 
+                           value="<?php echo esc_attr($daily_summary_time); ?>" />
+                    <p class="description">
+                        Time to send the daily summary (server time: <?php echo current_time('H:i'); ?>)
+                    </p>
+                </td>
+            </tr>
+        </table>
+        
+        <p class="submit">
+            <input type="submit" name="submit_notification_settings" id="submit" class="button-primary" value="Save Notification Settings">
+        </p>
+    </form>
+    
+    <hr>
+    
+    <h3>Notification Preview</h3>
+    <div style="background: #f4f4f4; padding: 15px; border-radius: 5px; margin-top: 20px;">
+        <strong>Instant notification format:</strong><br>
+        <code>[Username] just uploaded [Product URL]</code><br><br>
+        
+        <strong>Daily summary format:</strong><br>
+        <code>📊 Daily Upload Summary for [Date]<br>
+        Total products uploaded: [Number]<br>
+        • [Username] uploaded [Count] product(s): [Product Names]</code>
+    </div>
+    <?php
+}
+
+/**
+ * Send test Slack notification
+ */
+function sspu_send_test_slack_notification() {
+    $webhook_url = get_option('sspu_slack_webhook_url');
+    
+    if (empty($webhook_url)) {
+        echo '<div class="notice notice-error"><p>Slack webhook URL is not configured.</p></div>';
+        return;
+    }
+    
+    $user = wp_get_current_user();
+    $username = $user->display_name ?: $user->user_login;
+    
+    $message = [
+        'text' => sprintf('🧪 *Test Notification*\n\nThis is a test notification from %s.\nYour Slack integration is working correctly!', $username),
+        'username' => 'Shopify Product Uploader',
+        'icon_emoji' => ':white_check_mark:',
+        'mrkdwn' => true
+    ];
+    
+    $args = [
+        'body' => json_encode($message),
+        'headers' => [
+            'Content-Type' => 'application/json',
+        ],
+        'timeout' => 30,
+        'sslverify' => true,
+    ];
+    
+    $response = wp_remote_post($webhook_url, $args);
+    
+    if (is_wp_error($response)) {
+        echo '<div class="notice notice-error"><p>Failed to send test notification: ' . esc_html($response->get_error_message()) . '</p></div>';
+    } else {
+        $response_code = wp_remote_retrieve_response_code($response);
+        if ($response_code === 200) {
+            echo '<div class="notice notice-success"><p>Test notification sent successfully! Check your Slack channel.</p></div>';
+        } else {
+            echo '<div class="notice notice-error"><p>Slack returned an error. Response code: ' . esc_html($response_code) . '</p></div>';
+        }
+    }
 }
 
 /**
@@ -604,11 +870,18 @@ function sspu_uninstall() {
     delete_option('sspu_openai_api_key');
     delete_option('sspu_gemini_api_key');
     delete_option('sspu_anthropic_api_key');
+    delete_option('sspu_slack_webhook_url');
+    delete_option('sspu_slack_notifications_enabled');
+    delete_option('sspu_slack_daily_summary_enabled');
+    delete_option('sspu_slack_daily_summary_time');
     delete_option('sspu_sku_pattern');
     delete_option('sspu_volume_tier_multipliers');
     delete_option('sspu_seo_template');
     delete_option('sspu_alibaba_url_expiry');
     delete_option('sspu_db_version');
+    
+    // Remove scheduled events
+    wp_clear_scheduled_hook('sspu_daily_slack_summary');
     
     // Remove all plugin tables (optional - uncomment if you want complete removal)
     /*

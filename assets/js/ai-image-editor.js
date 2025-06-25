@@ -1548,44 +1548,45 @@ Follow these steps to process the image:
         },
 
         handleImageTool: function(action) {
-            console.log('🔧 Handling image tool:', action);
-            const $image = $("#ai-editor-image");
-            let currentScale, newScale;
-            switch (action) {
-                case "smart-rotate":
-                    this.smartRotate();
-                    break;
-                case "undo":
-                    this.undo();
-                    break;
-                case "redo":
-                    this.redo();
-                    break;
-                case "zoom-in":
-                    currentScale = parseFloat($image.data("scale") || 1);
-                    newScale = Math.min(currentScale + 0.25, 3);
-                    $image.css("transform", `scale(${newScale})`).data("scale", newScale);
-                    console.log('🔍 Zoom in:', newScale);
-                    break;
-                case "zoom-out":
-                    currentScale = parseFloat($image.data("scale") || 1);
-                    newScale = Math.max(currentScale - 0.25, 0.5);
-                    $image.css("transform", `scale(${newScale})`).data("scale", newScale);
-                    console.log('🔍 Zoom out:', newScale);
-                    break;
-                case "reset-zoom":
-                    $image.css("transform", "scale(1)").data("scale", 1);
-                    console.log('🔍 Reset zoom');
-                    break;
-                case "download":
-                    console.log('⬇️ Downloading image');
-                    const link = document.createElement("a");
-                    link.href = $image.attr("src");
-                    link.download = "ai-edited-image.png";
-                    link.click();
-                    break;
-            }
-        },
+    console.log('🔧 Handling image tool:', action);
+    const $image = $("#ai-editor-image");
+    let currentScale, newScale;
+    switch (action) {
+        // Remove this case since smart-rotate has its own handler
+        // case "smart-rotate":
+        //     this.smartRotate();
+        //     break;
+        case "undo":
+            this.undo();
+            break;
+        case "redo":
+            this.redo();
+            break;
+        case "zoom-in":
+            currentScale = parseFloat($image.data("scale") || 1);
+            newScale = Math.min(currentScale + 0.25, 3);
+            $image.css("transform", `scale(${newScale})`).data("scale", newScale);
+            console.log('🔍 Zoom in:', newScale);
+            break;
+        case "zoom-out":
+            currentScale = parseFloat($image.data("scale") || 1);
+            newScale = Math.max(currentScale - 0.25, 0.5);
+            $image.css("transform", `scale(${newScale})`).data("scale", newScale);
+            console.log('🔍 Zoom out:', newScale);
+            break;
+        case "reset-zoom":
+            $image.css("transform", "scale(1)").data("scale", 1);
+            console.log('🔍 Reset zoom');
+            break;
+        case "download":
+            console.log('⬇️ Downloading image');
+            const link = document.createElement("a");
+            link.href = $image.attr("src");
+            link.download = "ai-edited-image.png";
+            link.click();
+            break;
+    }
+},
 
         loadImage: function() {
             console.group('🖼️ Load Image');
