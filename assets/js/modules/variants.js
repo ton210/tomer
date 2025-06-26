@@ -21,6 +21,25 @@
                 console.log('SSPU Variants: Detect All Colors button found and ready');
             }
 
+            // Additional check for upload custom mask functionality
+            setTimeout(() => {
+                const $uploadButtons = $('.upload-custom-mask');
+                console.log('SSPU Variants: Upload custom mask buttons found:', $uploadButtons.length);
+
+                // If buttons exist but don't have click handlers, bind them directly
+                $uploadButtons.each(function() {
+                    const $btn = $(this);
+                    if (!$btn.data('sspu-bound')) {
+                        $btn.data('sspu-bound', true);
+                        $btn.on('click', function(e) {
+                            e.preventDefault();
+                            console.log('Direct click handler for upload custom mask');
+                            APP.variants.uploadCustomMask($(this));
+                        });
+                    }
+                });
+            }, 1000);
+
             APP.utils.log('Variants module initialized');
         },
 
@@ -30,6 +49,14 @@
         bindEvents: function() {
             const self = this;
             const $doc = APP.cache.$doc;
+
+            // Use body as the delegate for all dynamic content to ensure events work
+            $('body').on('click', '.upload-custom-mask', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Upload custom mask button clicked (body delegate)');
+                self.uploadCustomMask($(this));
+            });
 
             // Add individual variant button
             $doc.on('click', '#sspu-add-variant-btn', function(e) {
@@ -190,12 +217,6 @@
                 self.pasteDesignMask($(this));
             });
 
-            // Upload custom mask button
-            $doc.on('click', '.upload-custom-mask', function(e) {
-                e.preventDefault();
-                self.uploadCustomMask($(this));
-            });
-
             // Track variant changes for auto-save
             $doc.on('change', '.sspu-variant-row input, .sspu-variant-row select', function() {
                 if (APP.state.autoSaveTimer) {
@@ -207,6 +228,16 @@
                     }
                 }, 30000);
             });
+
+            // Test if events are properly bound
+            console.log('SSPU Variants: Event binding complete. Testing upload-custom-mask binding...');
+            setTimeout(() => {
+                const testButton = $('.upload-custom-mask').first();
+                if (testButton.length > 0) {
+                    const events = $._data(testButton[0], 'events');
+                    console.log('SSPU Variants: Events bound to first upload-custom-mask button:', events);
+                }
+            }, 500);
         },
 
         /**
@@ -1857,17 +1888,34 @@
          */
         uploadCustomMask: function($button) {
             const self = this;
+            console.log('uploadCustomMask method called');
+
+            // Check if wp.media is available
+            if (typeof wp === 'undefined' || typeof wp.media === 'undefined') {
+                console.error('WordPress media library not loaded');
+                APP.utils.notify('Media library not available. Please refresh the page.', 'error');
+                return;
+            }
+
             if (wp.media) {
                 const frame = wp.media({
                     title: 'Select Custom Mask Image',
                     button: { text: 'Use this mask' },
                     multiple: false,
-                    library: { type: 'image/png' } // Prefer PNG for masks
+                    library: { type: 'image' } // Changed from 'image/png' to 'image' for broader compatibility
                 });
+
                 frame.on('select', function() {
+                    console.log('Image selected from media library');
                     const attachment = frame.state().get('selection').first().toJSON();
+                    console.log('Selected attachment:', attachment);
                     self.applyMaskToAll(attachment.url);
                 });
+
+                frame.on('open', function() {
+                    console.log('Media library opened');
+                });
+
                 frame.open();
             }
         },
@@ -1877,19 +1925,43 @@
          * @param {string} maskUrl - The URL of the custom mask image
          */
         applyMaskToAll: function(maskUrl) {
+            console.log('applyMaskToAll called with URL:', maskUrl);
+
             if (!maskUrl) {
                 APP.utils.notify('No mask URL provided.', 'error');
                 return;
             }
+
             if (!confirm('Apply this mask to all variants? This will overwrite any existing masks.')) {
                 return;
             }
-            $('.sspu-variant-row').each(function() {
+
+            const $variantRows = $('.sspu-variant-row');
+            console.log('Found variant rows:', $variantRows.length);
+
+            if ($variantRows.length === 0) {
+                APP.utils.notify('No variants found. Please add variants first.', 'warning');
+                return;
+            }
+
+            $variantRows.each(function() {
                 const $row = $(this);
+                console.log('Applying mask to variant row');
                 $row.find('.sspu-designer-mask-url').val(maskUrl);
                 $row.find('.sspu-design-files-status').html('✓ Custom mask applied');
             });
+
             APP.utils.notify('Custom mask applied to all variants!', 'success');
+        }
+    };
+
+    // Expose uploadCustomMask to global scope for debugging
+    window.testUploadCustomMask = function() {
+        console.log('Testing upload custom mask directly...');
+        if (APP && APP.variants && APP.variants.uploadCustomMask) {
+            APP.variants.uploadCustomMask($('.upload-custom-mask').first());
+        } else {
+            console.error('APP.variants.uploadCustomMask not available');
         }
     };
 

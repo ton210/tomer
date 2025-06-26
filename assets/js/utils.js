@@ -115,4 +115,28 @@ window.SSPU = window.SSPU || {};
         }
     };
 
+    // Global debug function for testing upload custom mask
+    window.debugUploadCustomMask = function() {
+        console.log('=== DEBUG UPLOAD CUSTOM MASK ===');
+        console.log('APP object exists:', typeof APP !== 'undefined');
+        console.log('APP.variants exists:', typeof APP.variants !== 'undefined');
+        console.log('uploadCustomMask method exists:', typeof APP.variants.uploadCustomMask === 'function');
+        console.log('wp object exists:', typeof wp !== 'undefined');
+        console.log('wp.media exists:', typeof wp !== 'undefined' && typeof wp.media !== 'undefined');
+
+        const $buttons = $('.upload-custom-mask');
+        console.log('Upload custom mask buttons found:', $buttons.length);
+
+        $buttons.each(function(index) {
+            const $btn = $(this);
+            console.log(`Button ${index}:`, {
+                element: $btn[0],
+                events: $._data($btn[0], 'events'),
+                parent: $btn.parent()[0]
+            });
+        });
+
+        console.log('=== END DEBUG ===');
+    };
+
 })(jQuery, window.SSPU);
