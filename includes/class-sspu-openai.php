@@ -159,54 +159,253 @@ class SSPU_OpenAI {
 
 	/**
 	 * STEP 2: Takes simple HTML and other product data, and reformats it with the full styled template.
+	 * Updated version with exact HTML structure preservation for Qstomize.com
 	 *
 	 * @param string $simple_html The basic HTML generated in step 1.
 	 * @param array $attributes An array of product attributes (variants, moq, etc.).
 	 * @return string|false The final, styled HTML or false on failure.
 	 */
-	public function reformat_description_with_style(string $simple_html, array $attributes) {
+	public function reformat_description_with_style($simple_html, $attributes = []) {
+		$this->last_error = '';
+
 		if (empty($this->api_key)) {
-			$this->last_error = 'OpenAI API key is not configured.';
+			$this->last_error = 'OpenAI API key not configured';
 			return false;
 		}
-	
-		// Create a text-based representation of the attributes for the AI
-		$attributes_text = "PRODUCT ATTRIBUTES:\n";
-		$attributes_text .= "Product Name: " . ($attributes['product_name'] ?? 'N/A') . "\n";
-		$attributes_text .= "Minimum Order Quantity: " . ($attributes['moq'] ?? 'N/A') . "\n";
-		$attributes_text .= "Weight: " . ($attributes['weight'] ?? 'N/A') . " lbs\n";
-	
-		if (!empty($attributes['print_methods'])) {
-			$attributes_text .= "Available Print Methods: " . implode(', ', $attributes['print_methods']) . "\n";
+
+		// Define the exact HTML template structure
+		$html_template = '
+<div class="shopify-product-description-container">
+    <h1 class="description-title">
+        {{PRODUCT_TITLE}}
+    </h1>
+
+    <div class="description-content-wrapper">
+        <div class="description-main-content">
+            <h2 class="description-subtitle">
+                {{PRODUCT_SUBTITLE}}
+            </h2>
+            <ul class="description-features-list">
+                {{FEATURES_LIST}}
+            </ul>
+
+            <p class="description-paragraph">
+                {{MAIN_DESCRIPTION}}
+            </p>
+        </div>
+
+        <div class="description-details-sidebar">
+            <h2 class="description-subtitle">Product Details</h2>
+            <div class="details-group">
+                {{PRODUCT_DETAILS}}
+            </div>
+
+            <h2 class="description-subtitle">Customization Options</h2>
+            <div class="details-group">
+                {{CUSTOMIZATION_OPTIONS}}
+            </div>
+        </div>
+    </div>
+</div>';
+
+		// Build the prompt with explicit template instructions
+		$prompt = "You are a professional e-commerce product description writer for Qstomize.com, a leading bulk and wholesale custom accessories supplier. You must reformat the following product description using the EXACT HTML structure provided.\n\n";
+
+		$prompt .= "COMPANY CONTEXT:\n";
+		$prompt .= "- Qstomize.com specializes in bulk orders of custom promotional accessories\n";
+		$prompt .= "- Target audience: Businesses, organizations, event planners, and marketing agencies\n";
+		$prompt .= "- Focus on wholesale quantities with customization options\n";
+		$prompt .= "- Emphasize bulk pricing advantages and branding opportunities\n\n";
+
+		$prompt .= "CRITICAL INSTRUCTIONS:\n";
+		$prompt .= "1. You MUST use the exact HTML structure and class names provided in the template\n";
+		$prompt .= "2. Do NOT add or remove any HTML tags or classes\n";
+		$prompt .= "3. Only replace the placeholder content with relevant product information\n";
+		$prompt .= "4. Maintain the exact div structure and hierarchy\n";
+		$prompt .= "5. Write from the perspective of a bulk/wholesale supplier\n";
+		$prompt .= "6. Emphasize customization, branding, and bulk order benefits\n\n";
+
+		$prompt .= "Product Information:\n";
+		$prompt .= "- Product Name: " . ($attributes['product_name'] ?? 'Product') . "\n";
+
+		if (!empty($attributes['moq'])) {
+			$prompt .= "- Minimum Order Quantity: " . $attributes['moq'] . " units\n";
 		}
-	
-		if (!empty($attributes['variants'])) {
-			$colors = array_unique(array_column($attributes['variants'], 'value'));
-			$attributes_text .= "Available Colors/Variants: " . implode(', ', $colors) . "\n";
+
+		if (!empty($attributes['print_methods']) && is_array($attributes['print_methods'])) {
+			$methods = array_map(function($method) {
+				return ucwords(str_replace('_', ' ', $method));
+			}, $attributes['print_methods']);
+			$prompt .= "- Available Print Methods: " . implode(', ', $methods) . "\n";
 		}
-	
-		$user_prompt = "Here is the simple product description and its attributes. Please reformat it using the provided HTML template.\n\n";
-		$user_prompt .= "SIMPLE HTML CONTENT:\n" . $simple_html . "\n\n";
-		$user_prompt .= $attributes_text;
-	
-		$messages = [
-			[
-				'role'    => 'system',
-				'content' => $this->get_full_styled_html_prompt()
+
+		if (!empty($attributes['variants']) && is_array($attributes['variants'])) {
+			$prompt .= "- Available Variants: " . count($attributes['variants']) . " options\n";
+			// Include variant details if available
+			foreach ($attributes['variants'] as $variant) {
+				if (isset($variant['option1'])) {
+					$prompt .= "  - " . $variant['option1'] . "\n";
+				}
+			}
+		}
+
+		// Add any additional product details
+		if (!empty($attributes['material'])) {
+			$prompt .= "- Material: " . $attributes['material'] . "\n";
+		}
+		if (!empty($attributes['dimensions'])) {
+			$prompt .= "- Dimensions: " . $attributes['dimensions'] . "\n";
+		}
+		if (!empty($attributes['product_type'])) {
+			$prompt .= "- Product Type: " . $attributes['product_type'] . "\n";
+		}
+		if (!empty($attributes['weight'])) {
+			$prompt .= "- Weight: " . $attributes['weight'] . " lbs\n";
+		}
+
+		$prompt .= "\nOriginal Description:\n" . strip_tags($simple_html) . "\n\n";
+
+		$prompt .= "HTML TEMPLATE TO USE (YOU MUST USE THIS EXACT STRUCTURE):\n" . $html_template . "\n\n";
+
+		$prompt .= "Replace the following placeholders with appropriate content:\n";
+		$prompt .= "- {{PRODUCT_TITLE}}: The product name/title with focus on customization aspect\n";
+		$prompt .= "- {{PRODUCT_SUBTITLE}}: A compelling subtitle emphasizing bulk/wholesale benefits\n";
+		$prompt .= "- {{FEATURES_LIST}}: Generate 5-7 feature items focusing on:\n";
+		$prompt .= "  * Customization capabilities\n";
+		$prompt .= "  * Bulk order advantages\n";
+		$prompt .= "  * Quality for promotional use\n";
+		$prompt .= "  * Branding opportunities\n";
+		$prompt .= "  Format: <li><strong>Feature Name:</strong> Feature description</li>\n";
+		$prompt .= "- {{MAIN_DESCRIPTION}}: A compelling paragraph that:\n";
+		$prompt .= "  * Positions product as ideal for bulk orders\n";
+		$prompt .= "  * Highlights customization options\n";
+		$prompt .= "  * Appeals to businesses and organizations\n";
+		$prompt .= "  * Mentions promotional/marketing use cases\n";
+		$prompt .= "- {{PRODUCT_DETAILS}}: Product specifications, each wrapped in:\n";
+		$prompt .= '  <div><p class="detail-heading">Detail Name:</p><p class="detail-text">Detail Value</p></div>' . "\n";
+		$prompt .= "- {{CUSTOMIZATION_OPTIONS}}: Customization details emphasizing bulk printing capabilities\n\n";
+
+		$prompt .= "IMPORTANT:\n";
+		$prompt .= "- Always mention 'Qstomize.com' naturally in the description\n";
+		$prompt .= "- Emphasize bulk pricing advantages\n";
+		$prompt .= "- Use language that appeals to B2B customers\n";
+		$prompt .= "- Highlight ROI of custom promotional products\n";
+		$prompt .= "- Include MOQ prominently in Product Details\n";
+		$prompt .= "- Position products as perfect for corporate gifts, events, marketing campaigns\n";
+		$prompt .= "- Include print methods in Customization Options section\n";
+		$prompt .= "- Maintain professional B2B tone while being engaging\n";
+		$prompt .= "- Use the exact class names and structure shown in the template\n\n";
+
+		$prompt .= "Return ONLY the complete HTML starting with <div class=\"shopify-product-description-container\"> and ending with the closing </div>. No explanations.";
+
+		// Make the API call
+		$response = wp_remote_post($this->api_url, [
+			'headers' => [
+				'Authorization' => 'Bearer ' . $this->api_key,
+				'Content-Type' => 'application/json',
 			],
-			[
-				'role'    => 'user',
-				'content' => $user_prompt
-			]
-		];
-	
-		$result = $this->make_openai_request($messages, 3500);
-	
-		if ($result) {
-			return $this->clean_html_response($result);
+			'body' => json_encode([
+				'model' => 'gpt-4o',
+				'messages' => [
+					['role' => 'system', 'content' => 'You are an expert B2B e-commerce copywriter for Qstomize.com, specializing in bulk custom promotional products. You follow HTML templates exactly while creating compelling descriptions for wholesale buyers.'],
+					['role' => 'user', 'content' => $prompt]
+				],
+				'temperature' => 0.7,
+				'max_tokens' => 2000
+			]),
+			'timeout' => 60
+		]);
+
+		if (is_wp_error($response)) {
+			$this->last_error = 'API request failed: ' . $response->get_error_message();
+			error_log('SSPU OpenAI Error: ' . $this->last_error);
+			return false;
 		}
-	
+
+		$body = json_decode(wp_remote_retrieve_body($response), true);
+
+		if (isset($body['choices'][0]['message']['content'])) {
+			// Clean up the response
+			$formatted_description = trim($body['choices'][0]['message']['content']);
+
+			// Validate that the response contains the required structure
+			if (strpos($formatted_description, 'class="shopify-product-description-container"') === false) {
+				$this->last_error = 'Generated description does not match required HTML structure';
+				error_log('SSPU Format Error: ' . $this->last_error);
+				return false;
+			}
+
+			// Ensure it's valid HTML while preserving the structure
+			$formatted_description = wp_kses($formatted_description, [
+				'div' => ['class' => []],
+				'h1' => ['class' => []],
+				'h2' => ['class' => []],
+				'p' => ['class' => []],
+				'ul' => ['class' => []],
+				'li' => [],
+				'strong' => [],
+				'br' => []
+			]);
+
+			return $formatted_description;
+		}
+
+		if (isset($body['error'])) {
+			$this->last_error = 'OpenAI API error: ' . $body['error']['message'];
+			error_log('SSPU OpenAI API Error: ' . $this->last_error);
+		}
+
 		return false;
+	}
+
+	/**
+	 * Helper method to extract product attributes from various sources
+	 * Call this before reformat_description_with_style to gather all attributes
+	 *
+	 * @param WC_Product $product The WooCommerce product object
+	 * @return array Formatted attributes array
+	 */
+	public function extract_product_attributes($product) {
+		$attributes = [
+			'product_name' => $product->get_name(),
+			'product_type' => $product->get_type(),
+			'moq' => get_post_meta($product->get_id(), '_moq', true) ?: '100',
+			'print_methods' => [],
+			'variants' => [],
+			'material' => '',
+			'dimensions' => '',
+			'weight' => $product->get_weight() ?: ''
+		];
+
+		// Extract print methods from product attributes
+		$product_attributes = $product->get_attributes();
+		foreach ($product_attributes as $attribute) {
+			if ($attribute->get_name() === 'pa_print_method' || $attribute->get_name() === 'print_method') {
+				$attributes['print_methods'] = $attribute->get_options();
+			}
+			if ($attribute->get_name() === 'pa_material' || $attribute->get_name() === 'material') {
+				$attributes['material'] = implode(', ', $attribute->get_options());
+			}
+		}
+
+		// Get variants for variable products
+		if ($product->is_type('variable')) {
+			$variations = $product->get_available_variations();
+			foreach ($variations as $variation) {
+				$attributes['variants'][] = $variation['attributes'];
+			}
+		}
+
+		// Extract dimensions if available
+		if ($product->has_dimensions()) {
+			$dimensions = [];
+			if ($product->get_length()) $dimensions[] = 'Length: ' . $product->get_length() . get_option('woocommerce_dimension_unit');
+			if ($product->get_width()) $dimensions[] = 'Width: ' . $product->get_width() . get_option('woocommerce_dimension_unit');
+			if ($product->get_height()) $dimensions[] = 'Height: ' . $product->get_height() . get_option('woocommerce_dimension_unit');
+			$attributes['dimensions'] = implode(', ', $dimensions);
+		}
+
+		return $attributes;
 	}
 
 	/**

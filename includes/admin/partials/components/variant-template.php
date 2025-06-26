@@ -1,6 +1,6 @@
 <?php
 /**
- * Variant Template Component
+ * Variant Template Component - Updated with custom mask upload button
  */
 if(!defined('WPINC'))die;
 ?>
@@ -92,6 +92,9 @@ if(!defined('WPINC'))die;
                     </button>
                     <button type="button" class="button button-small paste-design-mask" disabled>
                         <?php esc_html_e('Paste Design', 'sspu'); ?>
+                    </button>
+                    <button type="button" class="button button-small upload-custom-mask" style="margin-top: 5px;">
+                        <?php esc_html_e('Upload Custom Mask', 'sspu'); ?>
                     </button>
                 </td>
             </tr>

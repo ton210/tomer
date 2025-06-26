@@ -10,19 +10,19 @@
          * Initializes the variants module.
          */
         init: function() {
-    this.bindEvents();
-    this.initSortable();
-    this.addMimicStyles();
+            this.bindEvents();
+            this.initSortable();
+            this.addMimicStyles();
 
-    // Ensure detect all colors button is properly bound
-    if ($('#detect-all-colors-btn').length === 0) {
-        console.error('SSPU Variants: Detect All Colors button not found in DOM');
-    } else {
-        console.log('SSPU Variants: Detect All Colors button found and ready');
-    }
+            // Ensure detect all colors button is properly bound
+            if ($('#detect-all-colors-btn').length === 0) {
+                console.error('SSPU Variants: Detect All Colors button not found in DOM');
+            } else {
+                console.log('SSPU Variants: Detect All Colors button found and ready');
+            }
 
-    APP.utils.log('Variants module initialized');
-},
+            APP.utils.log('Variants module initialized');
+        },
 
         /**
          * Binds all event listeners for variant management.
@@ -188,6 +188,12 @@
             $doc.on('click', '.paste-design-mask:not(:disabled)', function(e) {
                 e.preventDefault();
                 self.pasteDesignMask($(this));
+            });
+
+            // Upload custom mask button
+            $doc.on('click', '.upload-custom-mask', function(e) {
+                e.preventDefault();
+                self.uploadCustomMask($(this));
             });
 
             // Track variant changes for auto-save
@@ -1478,6 +1484,8 @@
         },
 
         /**
+         * Apply design mask to all variants -
+         /**
          * Apply design mask to all variants - FIXED VERSION
          */
         applyDesignMaskToAll: function() {
@@ -1841,6 +1849,47 @@
             $row.find('.sspu-design-files-status').html('✓ Design files pasted');
 
             APP.utils.notify('Design files pasted successfully!', 'success');
+        },
+
+        /**
+         * Upload custom mask for all variants
+         * @param {jQuery} $button - The button that triggered the upload
+         */
+        uploadCustomMask: function($button) {
+            const self = this;
+            if (wp.media) {
+                const frame = wp.media({
+                    title: 'Select Custom Mask Image',
+                    button: { text: 'Use this mask' },
+                    multiple: false,
+                    library: { type: 'image/png' } // Prefer PNG for masks
+                });
+                frame.on('select', function() {
+                    const attachment = frame.state().get('selection').first().toJSON();
+                    self.applyMaskToAll(attachment.url);
+                });
+                frame.open();
+            }
+        },
+
+        /**
+         * Apply custom mask to all variants
+         * @param {string} maskUrl - The URL of the custom mask image
+         */
+        applyMaskToAll: function(maskUrl) {
+            if (!maskUrl) {
+                APP.utils.notify('No mask URL provided.', 'error');
+                return;
+            }
+            if (!confirm('Apply this mask to all variants? This will overwrite any existing masks.')) {
+                return;
+            }
+            $('.sspu-variant-row').each(function() {
+                const $row = $(this);
+                $row.find('.sspu-designer-mask-url').val(maskUrl);
+                $row.find('.sspu-design-files-status').html('✓ Custom mask applied');
+            });
+            APP.utils.notify('Custom mask applied to all variants!', 'success');
         }
     };
 

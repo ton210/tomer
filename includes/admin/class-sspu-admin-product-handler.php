@@ -130,6 +130,49 @@ if (!class_exists('SSPU_Admin_Product_Handler')) {
                 // Step 6: Process additional data (images, collections, metafields)
                 $this->process_product_extras($product, $_POST);
 
+                // NEW: Step 6.5: Generate and update the description with OpenAI
+                if ($this->openai) {
+                    $this->log('Starting post-creation description update...');
+
+                    // Prepare attributes for OpenAI
+                    $attributes = [
+                        'product_name' => $product['title'],
+                        'moq' => $_POST['product_min'] ?? 'Not specified',
+                        'print_methods' => $_POST['print_methods'] ?? [],
+                        'variants' => $product['variants'] ?? []
+                        // Add any other attributes you want to include
+                    ];
+
+                    // Generate the new, styled description
+                    $new_description = $this->openai->reformat_description_with_style($product['body_html'], $attributes);
+
+                    if ($new_description) {
+                        $this->log('Successfully generated new description. Updating product...');
+
+                        // Update the product on Shopify with the new description
+                        $update_response = $this->shopify_api->send_request(
+                            "products/{$product['id']}.json",
+                            'PUT',
+                            [
+                                'product' => [
+                                    'id' => $product['id'],
+                                    'body_html' => $new_description
+                                ]
+                            ]
+                        );
+
+                        if (isset($update_response['product'])) {
+                            $this->log('Product description updated successfully.');
+                            // Update local product data with new description
+                            $product['body_html'] = $new_description;
+                        } else {
+                            $this->log('WARNING: Failed to update product description.');
+                        }
+                    } else {
+                        $this->log('WARNING: Failed to generate new description. Using the original.');
+                    }
+                }
+
                 // Step 7: Log success and send notifications
                 $duration = round(microtime(true) - $start_time, 2);
                 $this->log("Product creation completed in {$duration} seconds");
@@ -823,7 +866,8 @@ if (!class_exists('SSPU_Admin_Product_Handler')) {
         private function process_print_methods($product_id, $print_methods) {
             $this->log('Processing print methods...');
 
-            $available_methods = ['silkscreen', 'uvprint', 'embroidery', 'sublimation', 'emboss', 'laserengrave'];
+            // Updated array to include new print methods
+            $available_methods = ['silkscreen', 'uvprint', 'embroidery', 'sublimation', 'emboss', 'laserengrave', 'heat_transfer', 'sticker', 'foil'];
 
             foreach ($available_methods as $method) {
                 $value = in_array($method, $print_methods) ? 'true' : 'false';
@@ -1630,7 +1674,7 @@ if (!class_exists('SSPU_Admin_Product_Handler')) {
 
             // Print methods
             if (isset($product_data['print_methods']) && is_array($product_data['print_methods'])) {
-                $print_methods = ['silkscreen', 'uvprint', 'embroidery', 'sublimation', 'emboss', 'laserengrave'];
+                $print_methods = ['silkscreen', 'uvprint', 'embroidery', 'sublimation', 'emboss', 'laserengrave', 'heat_transfer', 'sticker', 'foil'];
                 foreach ($print_methods as $method) {
                     $value = in_array('custom.' . $method, $product_data['print_methods']) ? 'true' : 'false';
 

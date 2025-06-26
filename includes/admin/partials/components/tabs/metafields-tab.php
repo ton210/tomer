@@ -1,6 +1,6 @@
 <?php
 /**
- * Metafields Tab Component
+ * Metafields Tab Component - Updated with new print methods
  */
 if(!defined('WPINC'))die;
 ?>
@@ -33,6 +33,18 @@ if(!defined('WPINC'))die;
                 <label>
                     <input type="checkbox" name="print_methods[]" value="laserengrave" /> 
                     <?php esc_html_e('Laser Engrave', 'sspu'); ?>
+                </label>
+                <label>
+                    <input type="checkbox" name="print_methods[]" value="heat_transfer" /> 
+                    <?php esc_html_e('Heat Transfer', 'sspu'); ?>
+                </label>
+                <label>
+                    <input type="checkbox" name="print_methods[]" value="sticker" /> 
+                    <?php esc_html_e('Sticker', 'sspu'); ?>
+                </label>
+                <label>
+                    <input type="checkbox" name="print_methods[]" value="foil" /> 
+                    <?php esc_html_e('Foil', 'sspu'); ?>
                 </label>
             </div>
         </td>
