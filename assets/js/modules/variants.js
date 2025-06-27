@@ -58,6 +58,13 @@
                 self.uploadCustomMask($(this));
             });
 
+            // Add this new button to the events
+            $('body').on('click', '#copy-design-area-to-all', function(e) {
+                e.preventDefault();
+                self.copyDesignAreaToAll();
+            });
+
+
             // Add individual variant button
             $doc.on('click', '#sspu-add-variant-btn', function(e) {
                 e.preventDefault();
@@ -238,6 +245,213 @@
                     console.log('SSPU Variants: Events bound to first upload-custom-mask button:', events);
                 }
             }, 500);
+        },
+
+        /**
+         * Create design tool files (mask and background)
+         * @param {jQuery} $button - The button that triggered the creation
+         */
+        createDesignFiles: function($button) {
+            const self = this;
+            const $row = $button.closest('.sspu-variant-row');
+            const imageId = $row.find('.sspu-variant-image-id').val();
+
+            if (!imageId) {
+                APP.utils.notify('Please select a variant image first.', 'warning');
+                return;
+            }
+
+            // Check if Cropper.js is loaded
+            if (typeof Cropper === 'undefined') {
+                APP.utils.notify('Cropper library not loaded. Please refresh the page.', 'error');
+                return;
+            }
+
+            // Create modal for mask selection with proper lightbox styling
+            const modalHtml = `
+                <div id="design-mask-modal" class="sspu-lightbox-overlay" style="display:none;">
+                    <div class="sspu-lightbox-content">
+                        <span class="sspu-lightbox-close">&times;</span>
+                        <h2>Select Design Area</h2>
+                        <p>Draw a rectangle around the area where designs should be placed, or upload a custom mask.</p>
+                        <div id="mask-image-container" style="max-height:60vh; overflow:hidden; margin: 20px 0;">
+                            <img id="mask-source-image" src="" style="max-width:100%; height:auto; display:block; margin:0 auto;">
+                        </div>
+                        <div style="margin-top:20px; text-align:center;">
+                            <button type="button" id="confirm-mask" class="button button-primary">Create Design Files</button>
+                            <button type="button" id="upload-variant-mask" class="button">Upload Custom Mask</button>
+                            <button type="button" id="cancel-mask" class="button">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if any
+            $('#design-mask-modal').remove();
+            $('body').append(modalHtml);
+
+            // Get image URL
+            wp.media.attachment(imageId).fetch().done(() => {
+                const imageUrl = wp.media.attachment(imageId).get('url');
+                const $modal = $('#design-mask-modal');
+                const $sourceImg = $('#mask-source-image');
+
+                $sourceImg.attr('src', imageUrl);
+                $modal.fadeIn();
+
+                // Initialize Cropper
+                const cropper = new Cropper($sourceImg[0], {
+                    aspectRatio: NaN,
+                    viewMode: 1,
+                    dragMode: 'crop',
+                    autoCropArea: 0.5,
+                    restore: false,
+                    guides: true,
+                    center: true,
+                    highlight: true,
+                    cropBoxMovable: true,
+                    cropBoxResizable: true,
+                    toggleDragModeOnDblclick: false,
+                });
+
+                // Handle Upload Custom Mask button inside the modal
+                $('#upload-variant-mask').on('click', function() {
+                    wp.media({
+                        title: 'Select Custom Mask',
+                        button: { text: 'Use this mask' },
+                        multiple: false,
+                        library: { type: 'image' }
+                    }).on('select', function() {
+                        const attachment = this.state().get('selection').first().toJSON();
+                        const maskUrl = attachment.url;
+                        $row.find('.sspu-designer-mask-url').val(maskUrl);
+                        // Also create a background from the original image
+                         $row.find('.sspu-designer-background-url').val(imageUrl);
+                        $row.find('.sspu-design-files-status').html('✓ Custom mask applied');
+                        APP.utils.notify('Custom mask applied to this variant!', 'success');
+                        $modal.fadeOut(() => $modal.remove());
+                    }).open();
+                });
+
+                // Handle confirm
+                $('#confirm-mask').on('click', function() {
+                    const cropData = cropper.getData();
+
+                    $button.prop('disabled', true).text('Creating files...');
+                    $modal.fadeOut();
+
+                    APP.utils.ajax('create_masked_image', {
+                        image_id: imageId,
+                        mask_coordinates: {
+                            x: Math.round(cropData.x),
+                            y: Math.round(cropData.y),
+                            width: Math.round(cropData.width),
+                            height: Math.round(cropData.height)
+                        }
+                    }).done(response => {
+                        if (response.success) {
+                            $row.find('.sspu-designer-background-url').val(response.data.background_url);
+                            $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
+                            $row.find('.sspu-design-files-status').html('✓ Design files created');
+                            APP.utils.notify('Design files created successfully!', 'success');
+
+                            // Enable paste button for other variants
+                            APP.state.copiedDesignMask = {
+                                background_url: response.data.background_url,
+                                mask_url: response.data.mask_url
+                            };
+                            $('.paste-design-mask').prop('disabled', false);
+                        } else {
+                            APP.utils.notify('Failed to create design files: ' + response.data.message, 'error');
+                        }
+                    }).fail(() => {
+                        APP.utils.notify('Error creating design files.', 'error');
+                    }).always(() => {
+                        $button.prop('disabled', false).text('Create Design Files');
+                        cropper.destroy();
+                        $modal.remove();
+                    });
+                });
+
+                // Handle cancel
+                $('#cancel-mask').on('click', function() {
+                    cropper.destroy();
+                    $modal.fadeOut(() => $modal.remove());
+                });
+
+                // Handle close button
+                $('.sspu-lightbox-close').on('click', function() {
+                    cropper.destroy();
+                    $modal.fadeOut(() => $modal.remove());
+                });
+
+                // Handle clicking outside the modal content
+                $modal.on('click', function(e) {
+                    if (e.target === this) {
+                        cropper.destroy();
+                        $modal.fadeOut(() => $modal.remove());
+                    }
+                });
+
+                // Handle ESC key
+                $(document).on('keydown.sspu-lightbox', function(e) {
+                    if (e.key === 'Escape') {
+                        cropper.destroy();
+                        $modal.fadeOut(() => $modal.remove());
+                        $(document).off('keydown.sspu-lightbox');
+                    }
+                });
+            });
+        },
+
+        /**
+         * Copy the design area from one variant and apply it to all others.
+         */
+        copyDesignAreaToAll: function() {
+            const self = this;
+            const $sourceRow = $('.sspu-variant-row').first();
+            const maskUrl = $sourceRow.find('.sspu-designer-mask-url').val();
+            const sourceImageId = $sourceRow.find('.sspu-variant-image-id').val();
+
+            if (!maskUrl || !sourceImageId) {
+                APP.utils.notify('Please create or upload a design mask on the first variant to copy it.', 'warning');
+                return;
+            }
+
+            self.extractMaskCoordinatesFromImage(maskUrl, sourceImageId)
+                .then(maskCoordinates => {
+                    if (!maskCoordinates) {
+                        APP.utils.notify('Could not extract mask coordinates from the source variant.', 'error');
+                        return;
+                    }
+
+                    const $otherVariants = $('.sspu-variant-row:not(:first)');
+                    let successCount = 0;
+
+                    $otherVariants.each(function() {
+                        const $row = $(this);
+                        const imageId = $row.find('.sspu-variant-image-id').val();
+
+                        if (imageId) {
+                            APP.utils.ajax('create_masked_image', {
+                                image_id: imageId,
+                                mask_coordinates: maskCoordinates
+                            }).done(response => {
+                                if (response.success) {
+                                    $row.find('.sspu-designer-background-url').val(response.data.background_url);
+                                    $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
+                                    $row.find('.sspu-design-files-status').html('✓ Design files created');
+                                    successCount++;
+                                }
+                            });
+                        }
+                    });
+
+                    APP.utils.notify(`Copied design area to ${successCount} other variants.`, 'success');
+                })
+                .catch(error => {
+                    APP.utils.notify('Error copying design area: ' + error.message, 'error');
+                });
         },
 
         /**
@@ -1701,143 +1915,6 @@
                 };
 
                 img.src = maskUrl;
-            });
-        },
-
-        /**
-         * Create design tool files (mask and background)
-         * @param {jQuery} $button - The button that triggered the creation
-         */
-        createDesignFiles: function($button) {
-            const self = this;
-            const $row = $button.closest('.sspu-variant-row');
-            const imageId = $row.find('.sspu-variant-image-id').val();
-
-            if (!imageId) {
-                APP.utils.notify('Please select a variant image first.', 'warning');
-                return;
-            }
-
-            // Check if Cropper.js is loaded
-            if (typeof Cropper === 'undefined') {
-                APP.utils.notify('Cropper library not loaded. Please refresh the page.', 'error');
-                return;
-            }
-
-            // Create modal for mask selection with proper lightbox styling
-            const modalHtml = `
-                <div id="design-mask-modal" class="sspu-lightbox-overlay" style="display:none;">
-                    <div class="sspu-lightbox-content">
-                        <span class="sspu-lightbox-close">&times;</span>
-                        <h2>Select Design Area</h2>
-                        <p>Draw a rectangle around the area where designs should be placed:</p>
-                        <div id="mask-image-container" style="max-height:60vh; overflow:hidden; margin: 20px 0;">
-                            <img id="mask-source-image" src="" style="max-width:100%; height:auto; display:block; margin:0 auto;">
-                        </div>
-                        <div style="margin-top:20px; text-align:center;">
-                            <button type="button" id="confirm-mask" class="button button-primary">Create Design Files</button>
-                            <button type="button" id="cancel-mask" class="button">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // Remove existing modal if any
-            $('#design-mask-modal').remove();
-            $('body').append(modalHtml);
-
-            // Get image URL
-            wp.media.attachment(imageId).fetch().done(() => {
-                const imageUrl = wp.media.attachment(imageId).get('url');
-                const $modal = $('#design-mask-modal');
-                const $sourceImg = $('#mask-source-image');
-
-                $sourceImg.attr('src', imageUrl);
-                $modal.fadeIn();
-
-                // Initialize Cropper
-                const cropper = new Cropper($sourceImg[0], {
-                    aspectRatio: NaN,
-                    viewMode: 1,
-                    dragMode: 'crop',
-                    autoCropArea: 0.5,
-                    restore: false,
-                    guides: true,
-                    center: true,
-                    highlight: true,
-                    cropBoxMovable: true,
-                    cropBoxResizable: true,
-                    toggleDragModeOnDblclick: false,
-                });
-
-                // Handle confirm
-                $('#confirm-mask').on('click', function() {
-                    const cropData = cropper.getData();
-
-                    $button.prop('disabled', true).text('Creating files...');
-                    $modal.fadeOut();
-
-                    APP.utils.ajax('create_masked_image', {
-                        image_id: imageId,
-                        mask_coordinates: {
-                            x: Math.round(cropData.x),
-                            y: Math.round(cropData.y),
-                            width: Math.round(cropData.width),
-                            height: Math.round(cropData.height)
-                        }
-                    }).done(response => {
-                        if (response.success) {
-                            $row.find('.sspu-designer-background-url').val(response.data.background_url);
-                            $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
-                            $row.find('.sspu-design-files-status').html('✓ Design files created');
-                            APP.utils.notify('Design files created successfully!', 'success');
-
-                            // Enable paste button for other variants
-                            APP.state.copiedDesignMask = {
-                                background_url: response.data.background_url,
-                                mask_url: response.data.mask_url
-                            };
-                            $('.paste-design-mask').prop('disabled', false);
-                        } else {
-                            APP.utils.notify('Failed to create design files: ' + response.data.message, 'error');
-                        }
-                    }).fail(() => {
-                        APP.utils.notify('Error creating design files.', 'error');
-                    }).always(() => {
-                        $button.prop('disabled', false).text('Create Design Files');
-                        cropper.destroy();
-                        $modal.remove();
-                    });
-                });
-
-                // Handle cancel
-                $('#cancel-mask').on('click', function() {
-                    cropper.destroy();
-                    $modal.fadeOut(() => $modal.remove());
-                });
-
-                // Handle close button
-                $('.sspu-lightbox-close').on('click', function() {
-                    cropper.destroy();
-                    $modal.fadeOut(() => $modal.remove());
-                });
-
-                // Handle clicking outside the modal content
-                $modal.on('click', function(e) {
-                    if (e.target === this) {
-                        cropper.destroy();
-                        $modal.fadeOut(() => $modal.remove());
-                    }
-                });
-
-                // Handle ESC key
-                $(document).on('keydown.sspu-lightbox', function(e) {
-                    if (e.key === 'Escape') {
-                        cropper.destroy();
-                        $modal.fadeOut(() => $modal.remove());
-                        $(document).off('keydown.sspu-lightbox');
-                    }
-                });
             });
         },
 

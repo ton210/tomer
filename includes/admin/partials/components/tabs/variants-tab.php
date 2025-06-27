@@ -5,22 +5,21 @@
 if(!defined('WPINC'))die;
 ?>
 
-<!-- Variant Generator Section -->
 <div class="variant-generator-section">
     <h3><?php esc_html_e('Generate Variants', 'sspu'); ?></h3>
     <table class="form-table">
         <tr>
             <th scope="row"><?php esc_html_e('Option Name', 'sspu'); ?></th>
             <td>
-                <input type="text" id="variant-option-name" 
-                       placeholder="<?php esc_attr_e('e.g., Color, Size, Material', 'sspu'); ?>" 
+                <input type="text" id="variant-option-name"
+                       placeholder="<?php esc_attr_e('e.g., Color, Size, Material', 'sspu'); ?>"
                        class="regular-text" />
             </td>
         </tr>
         <tr>
             <th scope="row"><?php esc_html_e('Option Values', 'sspu'); ?></th>
             <td>
-                <textarea id="variant-option-values" rows="3" class="large-text" 
+                <textarea id="variant-option-values" rows="3" class="large-text"
                           placeholder="<?php esc_attr_e("Enter values separated by commas or new lines, e.g.:\nRed, Blue, Green, Black\nOr:\nRed\nBlue\nGreen\nBlack", 'sspu'); ?>"></textarea>
                 <p class="description">
                     <?php esc_html_e('Enter each variant value separated by commas or on separate lines.', 'sspu'); ?>
@@ -30,7 +29,7 @@ if(!defined('WPINC'))die;
         <tr>
             <th scope="row"><?php esc_html_e('Base Price', 'sspu'); ?></th>
             <td>
-                <input type="number" id="variant-base-price" step="0.01" min="0" 
+                <input type="number" id="variant-base-price" step="0.01" min="0"
                        class="regular-text" placeholder="<?php esc_attr_e('19.99', 'sspu'); ?>" />
                 <p class="description">
                     <?php esc_html_e('This price will be applied to all generated variants.', 'sspu'); ?>
@@ -54,7 +53,6 @@ if(!defined('WPINC'))die;
     </div>
 </div>
 
-<!-- Bulk Pricing Controls -->
 <div class="variant-pricing-controls">
     <h3><?php esc_html_e('Bulk Pricing Actions', 'sspu'); ?></h3>
     <div class="bulk-actions">
@@ -79,6 +77,9 @@ if(!defined('WPINC'))die;
         <button type="button" id="apply-design-mask-to-all" class="button">
             <?php esc_html_e('Apply Design Mask to All', 'sspu'); ?>
         </button>
+        <button type="button" id="copy-design-area-to-all" class="button">
+            <?php esc_html_e('Copy Design Area to All', 'sspu'); ?>
+        </button>
         <button type="button" id="mimic-all-variants" class="button button-primary">
             🎯 <?php esc_html_e('Mimic All Variants', 'sspu'); ?>
         </button>
@@ -88,10 +89,8 @@ if(!defined('WPINC'))die;
     </div>
 </div>
 
-<!-- Variants Container -->
 <div id="sspu-variants-wrapper" class="sortable-variants"></div>
 
-<!-- Add Individual Variant Button -->
 <button type="button" id="sspu-add-variant-btn" class="button">
     <?php esc_html_e('Add Individual Variant', 'sspu'); ?>
 </button>
