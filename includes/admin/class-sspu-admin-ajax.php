@@ -25,6 +25,14 @@ class SSPU_Admin_Ajax
         add_action('wp_ajax_sspu_smart_rotate_image', [$this, 'handle_smart_rotate']);
         add_action('wp_ajax_sspu_mimic_all_variants', [$this, 'handle_mimic_all_variants']);
 
+        // Image-related
+        add_action('wp_ajax_sspu_validate_image', [$this, 'handle_validate_image']);
+        add_action('wp_ajax_sspu_upload_images', [$this, 'handle_upload_images']);
+        add_action('wp_ajax_sspu_scrape_alibaba_variants', [$this, 'handle_scrape_alibaba_variants']);
+        add_action('wp_ajax_sspu_create_masked_image', [$this, 'handle_create_masked_image']);
+        add_action('wp_ajax_sspu_create_masked_image_with_custom_mask', [$this, 'handle_create_masked_image_with_custom_mask']);
+        add_action('wp_ajax_sspu_download_external_image', [$this, 'handle_download_external_image']);
+
         // Collection-related
         add_action('wp_ajax_sspu_get_collections', [$this, 'handle_get_collections']);
         add_action('wp_ajax_sspu_create_collection', [$this, 'handle_create_collection']);
@@ -39,12 +47,6 @@ class SSPU_Admin_Ajax
         add_action('wp_ajax_sspu_test_gemini_api', [$this, 'handle_test_gemini_api']);
         add_action('wp_ajax_sspu_test_shopify_connection', [$this, 'handle_test_shopify_connection']);
 
-        // Image-related
-        add_action('wp_ajax_sspu_validate_image', [$this, 'handle_validate_image']);
-        add_action('wp_ajax_sspu_upload_images', [$this, 'handle_upload_images']);
-        add_action('wp_ajax_sspu_scrape_alibaba_variants', [$this, 'handle_scrape_alibaba_variants']);
-        add_action('wp_ajax_sspu_create_masked_image', [$this, 'handle_create_masked_image']);
-
         // Alibaba-related
         add_action('wp_ajax_sspu_get_current_alibaba_url', [$this, 'handle_get_current_alibaba_url']);
         add_action('wp_ajax_sspu_fetch_alibaba_product_name', [$this, 'handle_fetch_alibaba_product_name']);
@@ -54,6 +56,9 @@ class SSPU_Admin_Ajax
 
         // Template-related
         add_action('wp_ajax_sspu_get_single_template_content', [$this, 'handle_get_single_template_content']);
+        add_action('wp_ajax_sspu_get_image_templates', [$this, 'handle_get_image_templates']);
+        add_action('wp_ajax_sspu_save_image_template', [$this, 'handle_save_image_template']);
+        add_action('wp_ajax_sspu_delete_image_template', [$this, 'handle_delete_image_template']);
 
         // Analytics proxy handlers
         add_action('wp_ajax_sspu_get_analytics', [$this, 'handle_get_analytics_proxy']);
@@ -69,17 +74,11 @@ class SSPU_Admin_Ajax
 
         // Image retriever handlers
         add_action('wp_ajax_sspu_retrieve_alibaba_images', [$this, 'handle_retrieve_alibaba_images']);
-        add_action('wp_ajax_sspu_download_external_image', [$this, 'handle_download_external_image']);
 
         // AI handlers
         add_action('wp_ajax_sspu_ai_edit_image', [$this, 'handle_ai_edit_image']);
         add_action('wp_ajax_sspu_get_chat_history', [$this, 'handle_get_chat_history']);
         add_action('wp_ajax_sspu_save_edited_image', [$this, 'handle_save_edited_image']);
-
-        // Template handlers
-        add_action('wp_ajax_sspu_get_image_templates', [$this, 'handle_get_image_templates']);
-        add_action('wp_ajax_sspu_save_image_template', [$this, 'handle_save_image_template']);
-        add_action('wp_ajax_sspu_delete_image_template', [$this, 'handle_delete_image_template']);
 
         // Mimic handlers
         add_action('wp_ajax_sspu_get_mimic_images', [$this, 'handle_get_mimic_images']);
@@ -621,7 +620,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle refresh nonce
      */
-    /**
+/**
  * Handle refresh nonce - FIXED VERSION
  */
 public function handle_refresh_nonce()
@@ -1109,6 +1108,241 @@ public function handle_refresh_nonce()
             'message' => 'Design files created successfully'
         ]);
     }
+
+    /**
+     * Handle create masked image with custom mask
+     */
+    /**
+ * Handle create masked image with custom mask
+ */
+/**
+ * Handle create masked image with custom mask
+ */
+public function handle_create_masked_image_with_custom_mask() {
+    check_ajax_referer('sspu_ajax_nonce', 'nonce');
+
+    if (!current_user_can('upload_shopify_products')) {
+        wp_send_json_error(['message' => 'Permission denied']);
+        return;
+    }
+
+    $image_id = absint($_POST['image_id']);
+    $custom_mask_url = esc_url_raw($_POST['custom_mask_url']);
+    $mask_adjustments = isset($_POST['mask_adjustments']) ? $_POST['mask_adjustments'] : [];
+
+    if (!$image_id || !$custom_mask_url) {
+        wp_send_json_error(['message' => 'Missing required parameters.']);
+        return;
+    }
+
+    // Get adjustment values
+    $mask_size = isset($mask_adjustments['size']) ? floatval($mask_adjustments['size']) / 100 : 1.0;
+    $mask_x = isset($mask_adjustments['x']) ? floatval($mask_adjustments['x']) / 100 : 0.5;
+    $mask_y = isset($mask_adjustments['y']) ? floatval($mask_adjustments['y']) / 100 : 0.5;
+
+    // Get the original image path
+    $image_path = get_attached_file($image_id);
+    if (!$image_path || !file_exists($image_path)) {
+        wp_send_json_error(['message' => 'Original image file not found.']);
+        return;
+    }
+
+    // Download the custom mask to a temporary file
+    require_once(ABSPATH . 'wp-admin/includes/file.php');
+    $mask_tmp = download_url($custom_mask_url, 300);
+
+    if (is_wp_error($mask_tmp)) {
+        wp_send_json_error(['message' => 'Failed to download custom mask: ' . $mask_tmp->get_error_message()]);
+        return;
+    }
+
+    $image_info = getimagesize($image_path);
+    if (!$image_info) {
+        @unlink($mask_tmp);
+        wp_send_json_error(['message' => 'Invalid original image file.']);
+        return;
+    }
+
+    $mime_type = $image_info['mime'];
+    $width = $image_info[0];
+    $height = $image_info[1];
+
+    // Create image resource from source image
+    $source_image = null;
+    switch ($mime_type) {
+        case 'image/jpeg':
+            $source_image = imagecreatefromjpeg($image_path);
+            break;
+        case 'image/png':
+            $source_image = imagecreatefrompng($image_path);
+            break;
+        case 'image/gif':
+            $source_image = imagecreatefromgif($image_path);
+            break;
+        case 'image/webp':
+            if (function_exists('imagecreatefromwebp')) {
+                $source_image = imagecreatefromwebp($image_path);
+            }
+            break;
+    }
+
+    if (!$source_image) {
+        @unlink($mask_tmp);
+        wp_send_json_error(['message' => 'Failed to create image resource from original file.']);
+        return;
+    }
+
+    // Load the custom mask
+    $mask_info = getimagesize($mask_tmp);
+    if (!$mask_info) {
+        imagedestroy($source_image);
+        @unlink($mask_tmp);
+        wp_send_json_error(['message' => 'Invalid mask image file.']);
+        return;
+    }
+
+    $mask_original = null;
+    switch ($mask_info['mime']) {
+        case 'image/jpeg':
+            $mask_original = imagecreatefromjpeg($mask_tmp);
+            break;
+        case 'image/png':
+            $mask_original = imagecreatefrompng($mask_tmp);
+            break;
+        case 'image/gif':
+            $mask_original = imagecreatefromgif($mask_tmp);
+            break;
+        case 'image/webp':
+            if (function_exists('imagecreatefromwebp')) {
+                $mask_original = imagecreatefromwebp($mask_tmp);
+            }
+            break;
+    }
+
+    @unlink($mask_tmp); // Clean up temp file
+
+    if (!$mask_original) {
+        imagedestroy($source_image);
+        wp_send_json_error(['message' => 'Failed to load custom mask image.']);
+        return;
+    }
+
+    // Create adjusted mask
+    $mask_orig_width = imagesx($mask_original);
+    $mask_orig_height = imagesy($mask_original);
+
+    // Calculate scaled dimensions
+    $scaled_width = $mask_orig_width * $mask_size;
+    $scaled_height = $mask_orig_height * $mask_size;
+
+    // Calculate position
+    $pos_x = ($width * $mask_x) - ($scaled_width / 2);
+    $pos_y = ($height * $mask_y) - ($scaled_height / 2);
+
+    // Create a new mask image with adjustments applied
+    $mask_image = imagecreatetruecolor($width, $height);
+    imagealphablending($mask_image, false);
+    imagesavealpha($mask_image, true);
+
+    // Fill with black (areas to be made transparent)
+    $black = imagecolorallocate($mask_image, 0, 0, 0);
+    imagefill($mask_image, 0, 0, $black);
+
+    // Copy and resize the mask to the specified position
+    imagecopyresampled(
+        $mask_image,
+        $mask_original,
+        $pos_x, $pos_y,  // Destination position
+        0, 0,            // Source position
+        $scaled_width, $scaled_height,   // Destination size
+        $mask_orig_width, $mask_orig_height  // Source size
+    );
+
+    imagedestroy($mask_original);
+
+    // Create background image (full original image)
+    $background_image = imagecreatetruecolor($width, $height);
+    imagecopy($background_image, $source_image, 0, 0, 0, 0, $width, $height);
+
+    // Create final mask image by applying the custom mask
+    $final_mask = imagecreatetruecolor($width, $height);
+    imagealphablending($final_mask, false);
+    imagesavealpha($final_mask, true);
+
+    // Copy original image
+    imagecopy($final_mask, $source_image, 0, 0, 0, 0, $width, $height);
+
+    // Apply mask - white/light areas in mask = design area (kept), black = transparent
+    for ($x = 0; $x < $width; $x++) {
+        for ($y = 0; $y < $height; $y++) {
+            $mask_color = imagecolorat($mask_image, $x, $y);
+            $mask_rgba = imagecolorsforindex($mask_image, $mask_color);
+
+            // Calculate brightness (0-255)
+            $brightness = ($mask_rgba['red'] + $mask_rgba['green'] + $mask_rgba['blue']) / 3;
+
+            // If dark (brightness < 128), make transparent
+            if ($brightness < 128) {
+                $transparent = imagecolorallocatealpha($final_mask, 0, 0, 0, 127);
+                imagesetpixel($final_mask, $x, $y, $transparent);
+            }
+        }
+    }
+
+    $upload_dir = wp_upload_dir();
+    $base_name = pathinfo($image_path, PATHINFO_FILENAME);
+    $timestamp = time();
+
+    // Save background image
+    $background_filename = $base_name . '_background_custom_' . $timestamp . '.png';
+    $background_path = $upload_dir['path'] . '/' . $background_filename;
+    imagepng($background_image, $background_path, 9);
+
+    // Save mask image
+    $mask_filename = $base_name . '_mask_custom_' . $timestamp . '.png';
+    $mask_path = $upload_dir['path'] . '/' . $mask_filename;
+    imagepng($final_mask, $mask_path, 9);
+
+    // Clean up
+    imagedestroy($source_image);
+    imagedestroy($background_image);
+    imagedestroy($mask_image);
+    imagedestroy($final_mask);
+
+    // Create WordPress attachments
+    $background_attachment_id = $this->create_attachment($background_path, $background_filename, 'Custom Mask Background - ' . $base_name);
+    $mask_attachment_id = $this->create_attachment($mask_path, $mask_filename, 'Custom Mask - ' . $base_name);
+
+    if (!$background_attachment_id || !$mask_attachment_id) {
+        @unlink($background_path);
+        @unlink($mask_path);
+        wp_send_json_error(['message' => 'Failed to create WordPress attachments.']);
+        return;
+    }
+
+    $background_url = wp_get_attachment_url($background_attachment_id);
+    $mask_url = wp_get_attachment_url($mask_attachment_id);
+
+    if (class_exists('SSPU_Analytics')) {
+        $analytics = new SSPU_Analytics();
+        $analytics->log_activity(get_current_user_id(), 'custom_mask_applied', [
+            'original_image_id' => $image_id,
+            'background_id' => $background_attachment_id,
+            'mask_id' => $mask_attachment_id,
+            'custom_mask_url' => $custom_mask_url,
+            'adjustments' => $mask_adjustments
+        ]);
+    }
+
+    wp_send_json_success([
+        'background_url' => $background_url,
+        'mask_url' => $mask_url,
+        'background_id' => $background_attachment_id,
+        'mask_id' => $mask_attachment_id,
+        'message' => 'Design files created with custom mask successfully'
+    ]);
+}
+
 
     /**
      * Handle download external image - IMPLEMENTED DIRECTLY

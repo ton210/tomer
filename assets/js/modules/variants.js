@@ -316,21 +316,55 @@
 
                 // Handle Upload Custom Mask button inside the modal
                 $('#upload-variant-mask').on('click', function() {
-                    wp.media({
+                    const frame = wp.media({
                         title: 'Select Custom Mask',
-                        button: { text: 'Use this mask' },
+                        button: {
+                            text: 'Use this mask'
+                        },
                         multiple: false,
-                        library: { type: 'image' }
-                    }).on('select', function() {
-                        const attachment = this.state().get('selection').first().toJSON();
+                        library: {
+                            type: 'image'
+                        }
+                    });
+
+                    frame.on('select', function() {
+                        const attachment = frame.state().get('selection').first().toJSON();
                         const maskUrl = attachment.url;
-                        $row.find('.sspu-designer-mask-url').val(maskUrl);
-                        // Also create a background from the original image
-                         $row.find('.sspu-designer-background-url').val(imageUrl);
-                        $row.find('.sspu-design-files-status').html('✓ Custom mask applied');
-                        APP.utils.notify('Custom mask applied to this variant!', 'success');
-                        $modal.fadeOut(() => $modal.remove());
-                    }).open();
+
+                        // Show loading state
+                        $button.prop('disabled', true).text('Creating files with custom mask...');
+                        $modal.fadeOut();
+
+                        // Create design files with the custom mask
+                        APP.utils.ajax('create_masked_image_with_custom_mask', {
+                            image_id: imageId,
+                            custom_mask_url: maskUrl
+                        }).done(response => {
+                            if (response.success) {
+                                $row.find('.sspu-designer-background-url').val(response.data.background_url);
+                                $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
+                                $row.find('.sspu-design-files-status').html('✓ Design files created with custom mask');
+                                APP.utils.notify('Design files created with custom mask successfully!', 'success');
+
+                                // Enable paste button for other variants
+                                APP.state.copiedDesignMask = {
+                                    background_url: response.data.background_url,
+                                    mask_url: response.data.mask_url
+                                };
+                                $('.paste-design-mask').prop('disabled', false);
+                            } else {
+                                APP.utils.notify('Failed to create design files with custom mask: ' + response.data.message, 'error');
+                            }
+                        }).fail(() => {
+                            APP.utils.notify('Error creating design files with custom mask.', 'error');
+                        }).always(() => {
+                            $button.prop('disabled', false).text('Create Design Files');
+                            cropper.destroy();
+                            $modal.remove();
+                        });
+                    });
+
+                    frame.open();
                 });
 
                 // Handle confirm
@@ -1433,14 +1467,14 @@
 
                         // Smart rotate prompt
                         const prompt = "Extract the main product and create a professional e-commerce image:\n\n" +
-                                     "SPECS:\n" +
-                                     "• Pure white background (#FFFFFF)\n" +
-                                     "• Center product perfectly at 0° angle (no tilt/rotation)\n" +
-                                     "• Product fills 80% of image area with 10% margins all sides\n" +
-                                     "• Subtle drop shadow: 15% opacity, soft blur, directly below\n" +
-                                     "• Even studio lighting, maintain original colors\n" +
-                                     "• Sharp focus, clean edges, no background remnants\n\n" +
-                                     "CRITICAL: Output must be identical each time - same size, position, margins, and shadow for consistent results.";
+                            "SPECS:\n" +
+                            "• Pure white background (#FFFFFF)\n" +
+                            "• Center product perfectly at 0° angle (no tilt/rotation)\n" +
+                            "• Product fills 80% of image area with 10% margins all sides\n" +
+                            "• Subtle drop shadow: 15% opacity, soft blur, directly below\n" +
+                            "• Even studio lighting, maintain original colors\n" +
+                            "• Sharp focus, clean edges, no background remnants\n\n" +
+                            "CRITICAL: Output must be identical each time - same size, position, margins, and shadow for consistent results.";
 
                         // Make API call
                         $.ajax({
@@ -1729,8 +1763,6 @@
         },
 
         /**
-         * Apply design mask to all variants -
-         /**
          * Apply design mask to all variants - FIXED VERSION
          */
         applyDesignMaskToAll: function() {
@@ -1869,8 +1901,10 @@
                         const data = imageData.data;
 
                         // Find the transparent rectangle (the mask area)
-                        let minX = canvas.width, minY = canvas.height;
-                        let maxX = 0, maxY = 0;
+                        let minX = canvas.width,
+                            minY = canvas.height;
+                        let maxX = 0,
+                            maxY = 0;
                         let foundTransparent = false;
 
                         for (let y = 0; y < canvas.height; y++) {
@@ -1960,12 +1994,20 @@
         },
 
         /**
-         * Upload custom mask for all variants
+         * Upload custom mask for a specific variant
          * @param {jQuery} $button - The button that triggered the upload
          */
         uploadCustomMask: function($button) {
             const self = this;
-            console.log('uploadCustomMask method called');
+            const $row = $button.closest('.sspu-variant-row');
+            const imageId = $row.find('.sspu-variant-image-id').val();
+
+            console.log('uploadCustomMask method called for variant');
+
+            if (!imageId) {
+                APP.utils.notify('Please select a variant image first.', 'warning');
+                return;
+            }
 
             // Check if wp.media is available
             if (typeof wp === 'undefined' || typeof wp.media === 'undefined') {
@@ -1974,71 +2016,312 @@
                 return;
             }
 
-            if (wp.media) {
-                const frame = wp.media({
-                    title: 'Select Custom Mask Image',
-                    button: { text: 'Use this mask' },
-                    multiple: false,
-                    library: { type: 'image' } // Changed from 'image/png' to 'image' for broader compatibility
-                });
+            const frame = wp.media({
+                title: 'Select Custom Mask Image',
+                button: {
+                    text: 'Use this mask'
+                },
+                multiple: false,
+                library: {
+                    type: 'image'
+                }
+            });
 
-                frame.on('select', function() {
-                    console.log('Image selected from media library');
-                    const attachment = frame.state().get('selection').first().toJSON();
-                    console.log('Selected attachment:', attachment);
-                    self.applyMaskToAll(attachment.url);
-                });
+            frame.on('select', function() {
+                console.log('Custom mask selected');
+                const attachment = frame.state().get('selection').first().toJSON();
+                const maskUrl = attachment.url;
+                console.log('Selected mask URL:', maskUrl);
 
-                frame.on('open', function() {
-                    console.log('Media library opened');
-                });
+                // Get the original image URL
+                wp.media.attachment(imageId).fetch().done(() => {
+                    const imageUrl = wp.media.attachment(imageId).get('url');
 
-                frame.open();
-            }
+                    // Show preview modal
+                    self.showMaskPreviewModal($row, imageId, imageUrl, maskUrl);
+                });
+            });
+
+            frame.on('open', function() {
+                console.log('Media library opened for custom mask');
+            });
+
+            frame.open();
         },
 
         /**
-         * Apply custom mask to all variants
-         * @param {string} maskUrl - The URL of the custom mask image
+         * Show mask preview modal with adjustment controls
          */
-        applyMaskToAll: function(maskUrl) {
-            console.log('applyMaskToAll called with URL:', maskUrl);
+        showMaskPreviewModal: function($row, imageId, imageUrl, maskUrl) {
+            const self = this;
 
-            if (!maskUrl) {
-                APP.utils.notify('No mask URL provided.', 'error');
-                return;
-            }
+            // Create modal HTML
+            const modalHtml = `
+                <div id="mask-preview-modal" class="sspu-lightbox-overlay" style="display:none;">
+                    <div class="sspu-lightbox-content" style="max-width: 1200px;">
+                        <span class="sspu-lightbox-close">&times;</span>
+                        <h2>Adjust Design Area</h2>
+                        <p>Position and scale the mask to define where designs will be placed. The white/light area shows where designs will appear.</p>
+                        
+                        <div style="display: flex; gap: 20px; margin-top: 20px;">
+                            <div style="flex: 1;">
+                                <div id="mask-preview-container" style="position: relative; display: inline-block; border: 2px solid #ccc;">
+                                    <img id="preview-base-image" src="${imageUrl}" style="max-width: 600px; height: auto; display: block;">
+                                    <div id="mask-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                                        <img id="preview-mask-image" src="${maskUrl}" style="position: absolute; opacity: 0.7; mix-blend-mode: multiply;">
+                                    </div>
+                                    <div id="mask-handles" style="position: absolute; display: none;">
+                                        <div class="resize-handle" data-handle="nw" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: nw-resize; top: -5px; left: -5px;"></div>
+                                        <div class="resize-handle" data-handle="ne" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: ne-resize; top: -5px; right: -5px;"></div>
+                                        <div class="resize-handle" data-handle="sw" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: sw-resize; bottom: -5px; left: -5px;"></div>
+                                        <div class="resize-handle" data-handle="se" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: se-resize; bottom: -5px; right: -5px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="width: 300px;">
+                                <h3>Mask Controls</h3>
+                                
+                                <div style="margin-bottom: 15px;">
+                                    <label>Size: <span id="size-value">100</span>%</label>
+                                    <input type="range" id="mask-size" min="10" max="200" value="100" style="width: 100%;">
+                                </div>
+                                
+                                <div style="margin-bottom: 15px;">
+                                    <label>Horizontal Position: <span id="x-value">50</span>%</label>
+                                    <input type="range" id="mask-x" min="0" max="100" value="50" style="width: 100%;">
+                                </div>
+                                
+                                <div style="margin-bottom: 15px;">
+                                    <label>Vertical Position: <span id="y-value">50</span>%</label>
+                                    <input type="range" id="mask-y" min="0" max="100" value="50" style="width: 100%;">
+                                </div>
+                                
+                                <div style="margin-bottom: 15px;">
+                                    <label>
+                                        <input type="checkbox" id="maintain-aspect" checked> Maintain aspect ratio
+                                    </label>
+                                </div>
+                                
+                                <div style="margin-bottom: 15px;">
+                                    <label>Opacity: <span id="opacity-value">70</span>%</label>
+                                    <input type="range" id="mask-opacity" min="0" max="100" value="70" style="width: 100%;">
+                                </div>
+                                
+                                <button type="button" id="reset-mask" class="button">Reset Position</button>
+                                
+                                <hr style="margin: 20px 0;">
+                                
+                                <div style="background: #f0f0f0; padding: 10px; border-radius: 4px;">
+                                    <strong>Preview Info:</strong><br>
+                                    <small>• Light areas = Design placement area<br>
+                                    • Dark areas = Will be transparent<br>
+                                    • Drag corners to resize<br>
+                                    • Drag center to move</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px; text-align: center;">
+                            <button type="button" id="apply-custom-mask" class="button button-primary">Apply Custom Mask</button>
+                            <button type="button" id="cancel-custom-mask" class="button">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
 
-            if (!confirm('Apply this mask to all variants? This will overwrite any existing masks.')) {
-                return;
-            }
+            // Remove existing modal if any
+            $('#mask-preview-modal').remove();
+            $('body').append(modalHtml);
 
-            const $variantRows = $('.sspu-variant-row');
-            console.log('Found variant rows:', $variantRows.length);
+            const $modal = $('#mask-preview-modal');
+            const $maskImg = $('#preview-mask-image');
+            const $baseImg = $('#preview-base-image');
+            const $handles = $('#mask-handles');
 
-            if ($variantRows.length === 0) {
-                APP.utils.notify('No variants found. Please add variants first.', 'warning');
-                return;
-            }
+            // Wait for images to load
+            let imagesLoaded = 0;
+            const checkImagesLoaded = () => {
+                imagesLoaded++;
+                if (imagesLoaded === 2) {
+                    initializeMaskControls();
+                }
+            };
 
-            $variantRows.each(function() {
-                const $row = $(this);
-                console.log('Applying mask to variant row');
-                $row.find('.sspu-designer-mask-url').val(maskUrl);
-                $row.find('.sspu-design-files-status').html('✓ Custom mask applied');
+            $baseImg.on('load', checkImagesLoaded);
+            $maskImg.on('load', checkImagesLoaded);
+
+            // Show modal
+            $modal.fadeIn();
+
+            // Initialize controls after images load
+            const initializeMaskControls = () => {
+                const baseWidth = $baseImg.width();
+                const baseHeight = $baseImg.height();
+
+                // Set initial mask size to fit nicely on the base image
+                const initialSize = 50; // 50% of base image
+                updateMaskTransform();
+
+                // Make mask draggable
+                let isDragging = false;
+                let dragStartX, dragStartY;
+                let maskStartX, maskStartY;
+
+                $maskImg.css({
+                    cursor: 'move',
+                    pointerEvents: 'auto'
+                });
+
+                $maskImg.on('mousedown', function(e) {
+                    isDragging = true;
+                    dragStartX = e.pageX;
+                    dragStartY = e.pageY;
+                    const currentX = parseFloat($('#mask-x').val());
+                    const currentY = parseFloat($('#mask-y').val());
+                    maskStartX = currentX;
+                    maskStartY = currentY;
+                    e.preventDefault();
+                });
+
+                $(document).on('mousemove.maskDrag', function(e) {
+                    if (!isDragging) return;
+
+                    const deltaX = e.pageX - dragStartX;
+                    const deltaY = e.pageY - dragStartY;
+
+                    const percentX = (deltaX / baseWidth) * 100;
+                    const percentY = (deltaY / baseHeight) * 100;
+
+                    let newX = maskStartX + percentX;
+                    let newY = maskStartY + percentY;
+
+                    // Constrain to bounds
+                    newX = Math.max(0, Math.min(100, newX));
+                    newY = Math.max(0, Math.min(100, newY));
+
+                    $('#mask-x').val(newX).trigger('input');
+                    $('#mask-y').val(newY).trigger('input');
+                });
+
+                $(document).on('mouseup.maskDrag', function() {
+                    isDragging = false;
+                });
+            };
+
+            // Update mask transform based on controls
+            const updateMaskTransform = () => {
+                const size = $('#mask-size').val();
+                const x = $('#mask-x').val();
+                const y = $('#mask-y').val();
+                const opacity = $('#mask-opacity').val() / 100;
+
+                const scale = size / 100;
+                const translateX = (x - 50) + '%';
+                const translateY = (y - 50) + '%';
+
+                $maskImg.css({
+                    transform: `translate(${translateX}, ${translateY}) scale(${scale})`,
+                    transformOrigin: 'center center',
+                    opacity: opacity,
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    maxWidth: 'none'
+                });
+
+                // Update value displays
+                $('#size-value').text(size);
+                $('#x-value').text(Math.round(x));
+                $('#y-value').text(Math.round(y));
+                $('#opacity-value').text(opacity * 100);
+            };
+
+            // Bind control events
+            $('#mask-size, #mask-x, #mask-y, #mask-opacity').on('input', updateMaskTransform);
+
+            $('#reset-mask').on('click', function() {
+                $('#mask-size').val(100);
+                $('#mask-x').val(50);
+                $('#mask-y').val(50);
+                $('#mask-opacity').val(70);
+                updateMaskTransform();
             });
 
-            APP.utils.notify('Custom mask applied to all variants!', 'success');
-        }
-    };
+            // Apply mask button
+            $('#apply-custom-mask').on('click', function() {
+                const maskData = {
+                    size: $('#mask-size').val(),
+                    x: $('#mask-x').val(),
+                    y: $('#mask-y').val()
+                };
 
-    // Expose uploadCustomMask to global scope for debugging
-    window.testUploadCustomMask = function() {
-        console.log('Testing upload custom mask directly...');
-        if (APP && APP.variants && APP.variants.uploadCustomMask) {
-            APP.variants.uploadCustomMask($('.upload-custom-mask').first());
-        } else {
-            console.error('APP.variants.uploadCustomMask not available');
+                // Clean up event handlers
+                $(document).off('mousemove.maskDrag mouseup.maskDrag');
+
+                // Close modal
+                $modal.fadeOut(() => $modal.remove());
+
+                // Apply the mask with the adjustment data
+                self.applyCustomMaskWithAdjustments($row, imageId, maskUrl, maskData);
+            });
+
+            // Cancel button
+            $('#cancel-custom-mask').on('click', function() {
+                $(document).off('mousemove.maskDrag mouseup.maskDrag');
+                $modal.fadeOut(() => $modal.remove());
+            });
+
+            // Close button
+            $('.sspu-lightbox-close').on('click', function() {
+                $(document).off('mousemove.maskDrag mouseup.maskDrag');
+                $modal.fadeOut(() => $modal.remove());
+            });
+
+            // ESC key
+            $(document).on('keydown.maskPreview', function(e) {
+                if (e.key === 'Escape') {
+                    $(document).off('mousemove.maskDrag mouseup.maskDrag keydown.maskPreview');
+                    $modal.fadeOut(() => $modal.remove());
+                }
+            });
+        },
+
+        /**
+         * Apply custom mask with adjustments
+         */
+        applyCustomMaskWithAdjustments: function($row, imageId, maskUrl, maskData) {
+            const $button = $row.find('.upload-custom-mask');
+
+            // Show loading state
+            $button.prop('disabled', true).text('Applying custom mask...');
+
+            // Create design files with the custom mask and adjustments
+            APP.utils.ajax('create_masked_image_with_custom_mask', {
+                image_id: imageId,
+                custom_mask_url: maskUrl,
+                mask_adjustments: maskData
+            }).done(response => {
+                if (response.success) {
+                    $row.find('.sspu-designer-background-url').val(response.data.background_url);
+                    $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
+                    $row.find('.sspu-design-files-status').html('✓ Design files created with custom mask');
+                    APP.utils.notify('Design files created with custom mask successfully!', 'success');
+
+                    // Enable paste button for other variants
+                    APP.state.copiedDesignMask = {
+                        background_url: response.data.background_url,
+                        mask_url: response.data.mask_url
+                    };
+                    $('.paste-design-mask').prop('disabled', false);
+                } else {
+                    APP.utils.notify('Failed to create design files: ' + response.data.message, 'error');
+                }
+            }).fail(() => {
+                APP.utils.notify('Error creating design files.', 'error');
+            }).always(() => {
+                $button.prop('disabled', false).text('Upload Custom Mask');
+            });
         }
     };
 
