@@ -2055,26 +2055,20 @@
         showMaskPreviewModal: function($row, imageId, imageUrl, maskUrl) {
             const self = this;
 
-            // Create modal HTML
+            // Create modal HTML with improved structure
             const modalHtml = `
                 <div id="mask-preview-modal" class="sspu-lightbox-overlay" style="display:none;">
                     <div class="sspu-lightbox-content" style="max-width: 1200px;">
                         <span class="sspu-lightbox-close">&times;</span>
                         <h2>Adjust Design Area</h2>
-                        <p>Position and scale the mask to define where designs will be placed. The white/light area shows where designs will appear.</p>
+                        <p>Position and scale the mask to define where designs will be placed. The black area shows where designs will appear.</p>
                         
                         <div style="display: flex; gap: 20px; margin-top: 20px;">
                             <div style="flex: 1;">
-                                <div id="mask-preview-container" style="position: relative; display: inline-block; border: 2px solid #ccc;">
+                                <div id="mask-preview-container" style="position: relative; display: inline-block; border: 2px solid #ccc; overflow: hidden; background: #f0f0f0;">
                                     <img id="preview-base-image" src="${imageUrl}" style="max-width: 600px; height: auto; display: block;">
                                     <div id="mask-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
-                                        <img id="preview-mask-image" src="${maskUrl}" style="position: absolute; opacity: 0.7; mix-blend-mode: multiply;">
-                                    </div>
-                                    <div id="mask-handles" style="position: absolute; display: none;">
-                                        <div class="resize-handle" data-handle="nw" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: nw-resize; top: -5px; left: -5px;"></div>
-                                        <div class="resize-handle" data-handle="ne" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: ne-resize; top: -5px; right: -5px;"></div>
-                                        <div class="resize-handle" data-handle="sw" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: sw-resize; bottom: -5px; left: -5px;"></div>
-                                        <div class="resize-handle" data-handle="se" style="position: absolute; width: 10px; height: 10px; background: #0073aa; border: 2px solid #fff; cursor: se-resize; bottom: -5px; right: -5px;"></div>
+                                        <img id="preview-mask-image" src="${maskUrl}" style="position: absolute; opacity: 0.7;">
                                     </div>
                                 </div>
                             </div>
@@ -2114,10 +2108,9 @@
                                 
                                 <div style="background: #f0f0f0; padding: 10px; border-radius: 4px;">
                                     <strong>Preview Info:</strong><br>
-                                    <small>• Light areas = Design placement area<br>
-                                    • Dark areas = Will be transparent<br>
-                                    • Drag corners to resize<br>
-                                    • Drag center to move</small>
+                                    <small>• Black areas = Design placement area<br>
+                                    • White areas = Will remain visible<br>
+                                    • Adjust controls to position mask</small>
                                 </div>
                             </div>
                         </div>
@@ -2137,51 +2130,81 @@
             const $modal = $('#mask-preview-modal');
             const $maskImg = $('#preview-mask-image');
             const $baseImg = $('#preview-base-image');
-            const $handles = $('#mask-handles');
-
-            // Wait for images to load
-            let imagesLoaded = 0;
-            const checkImagesLoaded = () => {
-                imagesLoaded++;
-                if (imagesLoaded === 2) {
-                    initializeMaskControls();
-                }
-            };
-
-            $baseImg.on('load', checkImagesLoaded);
-            $maskImg.on('load', checkImagesLoaded);
+            const $maskOverlay = $('#mask-overlay');
 
             // Show modal
             $modal.fadeIn();
 
+            // Wait for images to load before initializing controls
+            let imagesLoaded = 0;
+            const checkImagesLoaded = () => {
+                imagesLoaded++;
+                if (imagesLoaded === 2) {
+                    // Force initial position to center
+                    $('#mask-x').val(50);
+                    $('#mask-y').val(50);
+                    $('#mask-size').val(100);
+                    $('#mask-opacity').val(70);
+                    initializeMaskControls();
+                }
+            };
+
+            // Use load event with error handling
+            $baseImg.on('load', checkImagesLoaded).on('error', function() {
+                console.error('Failed to load base image');
+                APP.utils.notify('Failed to load product image', 'error');
+                $modal.fadeOut(() => $modal.remove());
+            });
+
+            $maskImg.on('load', checkImagesLoaded).on('error', function() {
+                console.error('Failed to load mask image');
+                APP.utils.notify('Failed to load mask image', 'error');
+                $modal.fadeOut(() => $modal.remove());
+            });
+
             // Initialize controls after images load
             const initializeMaskControls = () => {
-                const baseWidth = $baseImg.width();
-                const baseHeight = $baseImg.height();
+                console.log('Initializing mask controls');
 
-                // Set initial mask size to fit nicely on the base image
-                const initialSize = 50; // 50% of base image
+                const containerWidth = $('#mask-preview-container').width();
+                const containerHeight = $('#mask-preview-container').height();
+
+                console.log('Container dimensions:', containerWidth, 'x', containerHeight);
+
+                // Set initial mask dimensions to match container
+                $maskOverlay.css({
+                    width: containerWidth + 'px',
+                    height: containerHeight + 'px'
+                });
+
+                // Initialize mask with centered position
                 updateMaskTransform();
 
                 // Make mask draggable
                 let isDragging = false;
                 let dragStartX, dragStartY;
-                let maskStartX, maskStartY;
+                let maskStartLeft, maskStartTop;
 
+                // Enable pointer events for dragging
+                $maskOverlay.css('pointer-events', 'auto');
                 $maskImg.css({
                     cursor: 'move',
                     pointerEvents: 'auto'
                 });
 
+                // Mouse drag functionality
                 $maskImg.on('mousedown', function(e) {
                     isDragging = true;
+                    e.preventDefault();
+
+                    const offset = $maskImg.offset();
+                    const containerOffset = $('#mask-preview-container').offset();
+
                     dragStartX = e.pageX;
                     dragStartY = e.pageY;
-                    const currentX = parseFloat($('#mask-x').val());
-                    const currentY = parseFloat($('#mask-y').val());
-                    maskStartX = currentX;
-                    maskStartY = currentY;
-                    e.preventDefault();
+
+                    maskStartLeft = offset.left - containerOffset.left;
+                    maskStartTop = offset.top - containerOffset.top;
                 });
 
                 $(document).on('mousemove.maskDrag', function(e) {
@@ -2190,18 +2213,26 @@
                     const deltaX = e.pageX - dragStartX;
                     const deltaY = e.pageY - dragStartY;
 
-                    const percentX = (deltaX / baseWidth) * 100;
-                    const percentY = (deltaY / baseHeight) * 100;
+                    const newLeft = maskStartLeft + deltaX;
+                    const newTop = maskStartTop + deltaY;
 
-                    let newX = maskStartX + percentX;
-                    let newY = maskStartY + percentY;
+                    // Get current scale
+                    const scale = $('#mask-size').val() / 100;
+                    const maskWidth = $maskImg.width() * scale;
+                    const maskHeight = $maskImg.height() * scale;
 
-                    // Constrain to bounds
-                    newX = Math.max(0, Math.min(100, newX));
-                    newY = Math.max(0, Math.min(100, newY));
+                    // Convert to percentage
+                    const containerWidth = $('#mask-preview-container').width();
+                    const containerHeight = $('#mask-preview-container').height();
 
-                    $('#mask-x').val(newX).trigger('input');
-                    $('#mask-y').val(newY).trigger('input');
+                    const percentX = (newLeft / (containerWidth - maskWidth)) * 100;
+                    const percentY = (newTop / (containerHeight - maskHeight)) * 100;
+
+                    // Update sliders
+                    $('#mask-x').val(Math.max(0, Math.min(100, percentX)));
+                    $('#mask-y').val(Math.max(0, Math.min(100, percentY)));
+
+                    updateMaskTransform();
                 });
 
                 $(document).on('mouseup.maskDrag', function() {
@@ -2217,24 +2248,38 @@
                 const opacity = $('#mask-opacity').val() / 100;
 
                 const scale = size / 100;
-                const translateX = (x - 50) + '%';
-                const translateY = (y - 50) + '%';
+
+                // Get actual mask dimensions
+                const maskWidth = $maskImg.width() * scale;
+                const maskHeight = $maskImg.height() * scale;
+
+                // Get container dimensions
+                const containerWidth = $('#mask-preview-container').width();
+                const containerHeight = $('#mask-preview-container').height();
+
+                // Calculate position as percentage of container
+                // x and y are 0-100, representing position within container
+                const leftPos = (x / 100) * (containerWidth - maskWidth);
+                const topPos = (y / 100) * (containerHeight - maskHeight);
 
                 $maskImg.css({
-                    transform: `translate(${translateX}, ${translateY}) scale(${scale})`,
-                    transformOrigin: 'center center',
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top left',
                     opacity: opacity,
                     position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    maxWidth: 'none'
+                    top: topPos + 'px',
+                    left: leftPos + 'px',
+                    width: 'auto',
+                    height: 'auto',
+                    maxWidth: 'none',
+                    margin: 0
                 });
 
                 // Update value displays
                 $('#size-value').text(size);
                 $('#x-value').text(Math.round(x));
                 $('#y-value').text(Math.round(y));
-                $('#opacity-value').text(opacity * 100);
+                $('#opacity-value').text(Math.round(opacity * 100));
             };
 
             // Bind control events
@@ -2255,6 +2300,8 @@
                     x: $('#mask-x').val(),
                     y: $('#mask-y').val()
                 };
+
+                console.log('Applying custom mask with data:', maskData);
 
                 // Clean up event handlers
                 $(document).off('mousemove.maskDrag mouseup.maskDrag');
@@ -2296,12 +2343,20 @@
             // Show loading state
             $button.prop('disabled', true).text('Applying custom mask...');
 
+            console.log('Sending custom mask request:', {
+                image_id: imageId,
+                custom_mask_url: maskUrl,
+                mask_adjustments: maskData
+            });
+
             // Create design files with the custom mask and adjustments
             APP.utils.ajax('create_masked_image_with_custom_mask', {
                 image_id: imageId,
                 custom_mask_url: maskUrl,
                 mask_adjustments: maskData
             }).done(response => {
+                console.log('Custom mask response:', response);
+
                 if (response.success) {
                     $row.find('.sspu-designer-background-url').val(response.data.background_url);
                     $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
@@ -2315,10 +2370,11 @@
                     };
                     $('.paste-design-mask').prop('disabled', false);
                 } else {
-                    APP.utils.notify('Failed to create design files: ' + response.data.message, 'error');
+                    APP.utils.notify('Failed to create design files: ' + (response.data.message || 'Unknown error'), 'error');
                 }
-            }).fail(() => {
-                APP.utils.notify('Error creating design files.', 'error');
+            }).fail((xhr) => {
+                console.error('AJAX error:', xhr);
+                APP.utils.notify('Error creating design files. Please check the console.', 'error');
             }).always(() => {
                 $button.prop('disabled', false).text('Upload Custom Mask');
             });
