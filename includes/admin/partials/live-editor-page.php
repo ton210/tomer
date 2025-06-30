@@ -1,33 +1,40 @@
 <?php
 /**
- * Live Editor Page Template
+ * Enhanced Live Editor Page Template
  */
 
 if (!defined('WPINC')) {
     die;
 }
-
-// Get collections and vendors for filters
-$shopify_api = new SSPU_Shopify_API();
-$collections = $shopify_api->get_all_collections();
-$vendors = $shopify_api->get_vendors();
 ?>
 
 <div class="wrap sspu-live-editor">
-    <h1 class="wp-heading-inline">Live Product Editor</h1>
-    <a href="<?php echo admin_url('admin.php?page=sspu-uploader'); ?>" class="page-title-action">Create New Product</a>
+    <h1 class="wp-heading-inline">
+        <span class="dashicons dashicons-edit-large"></span> Live Product Editor
+    </h1>
+    <a href="<?php echo admin_url('admin.php?page=sspu-uploader'); ?>" class="page-title-action">
+        <span class="dashicons dashicons-plus-alt"></span> Create New Product
+    </a>
+    <a href="#" id="refresh-all-products" class="page-title-action">
+        <span class="dashicons dashicons-update"></span> Refresh All
+    </a>
 
     <div class="sspu-editor-container">
+        <!-- Search Section -->
         <div class="sspu-search-section">
             <div class="search-filters">
                 <div class="filter-row">
                     <div class="filter-group">
-                        <label>Search Products</label>
-                        <input type="text" id="sspu-product-search" class="regular-text" placeholder="Search by title..." />
+                        <label for="sspu-product-search">Search Products</label>
+                        <input type="text" 
+                               id="sspu-product-search" 
+                               class="regular-text" 
+                               placeholder="Search by title, SKU, or vendor..." 
+                               autocomplete="off" />
                     </div>
 
                     <div class="filter-group">
-                        <label>Status</label>
+                        <label for="filter-status">Status</label>
                         <select id="filter-status">
                             <option value="">All Status</option>
                             <option value="active">Published</option>
@@ -37,46 +44,80 @@ $vendors = $shopify_api->get_vendors();
                     </div>
 
                     <div class="filter-group">
-                        <label>Vendor</label>
+                        <label for="filter-vendor">Vendor</label>
                         <select id="filter-vendor">
                             <option value="">All Vendors</option>
-                            <?php foreach ($vendors as $vendor) : ?>
-                                <option value="<?php echo esc_attr($vendor); ?>"><?php echo esc_html($vendor); ?></option>
-                            <?php endforeach; ?>
                         </select>
                     </div>
 
                     <div class="filter-group">
-                        <label>Collection</label>
+                        <label for="filter-collection">Collection</label>
                         <select id="filter-collection">
                             <option value="">All Collections</option>
-                            <?php foreach ($collections as $collection) : ?>
-                                <option value="<?php echo esc_attr($collection['id']); ?>"><?php echo esc_html($collection['title']); ?></option>
-                            <?php endforeach; ?>
                         </select>
                     </div>
 
                     <div class="filter-group">
-                        <button type="button" id="sspu-search-btn" class="button button-primary">Search</button>
-                        <button type="button" id="sspu-clear-filters" class="button">Clear</button>
+                        <label for="filter-product-type">Product Type</label>
+                        <input type="text" 
+                               id="filter-product-type" 
+                               class="regular-text" 
+                               placeholder="e.g., T-Shirt" />
                     </div>
+
+                    <div class="filter-group">
+                        <button type="button" id="sspu-search-btn" class="button button-primary">
+                            <span class="dashicons dashicons-search"></span> Search
+                        </button>
+                        <button type="button" id="sspu-clear-filters" class="button">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Additional Filters -->
+                <div class="advanced-filters" style="display: none;">
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label for="filter-tags">Tags</label>
+                            <input type="text" 
+                                   id="filter-tags" 
+                                   class="regular-text" 
+                                   placeholder="Comma-separated tags" />
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="filter-price-min">Min Price</label>
+                            <input type="number" 
+                                   id="filter-price-min" 
+                                   class="regular-text" 
+                                   step="0.01" 
+                                   min="0" />
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label for="filter-price-max">Max Price</label>
+                            <input type="number" 
+                                   id="filter-price-max" 
+                                   class="regular-text" 
+                                   step="0.01" 
+                                   min="0" />
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="text-align: right; margin-top: 10px;">
+                    <a href="#" id="toggle-advanced-filters">
+                        <span class="dashicons dashicons-admin-settings"></span> Advanced Filters
+                    </a>
                 </div>
             </div>
 
             <div id="sspu-search-results"></div>
         </div>
 
+        <!-- Hidden Editor Section (Moved to Modal) -->
         <div id="sspu-editor-section" style="display: none;">
-            <div class="editor-header">
-                <h2>Editing: <span id="sspu-editing-title"></span></h2>
-                <div class="editor-actions">
-                    <button type="button" id="sspu-preview-btn" class="button">Preview</button>
-                    <button type="button" id="sspu-duplicate-btn" class="button">Duplicate</button>
-                    <button type="button" id="sspu-view-in-shopify" class="button">View in Shopify</button>
-                    <span class="autosave-status"></span>
-                </div>
-            </div>
-
             <form id="sspu-live-editor-form">
                 <input type="hidden" id="sspu-product-id" value="" />
 
@@ -90,6 +131,7 @@ $vendors = $shopify_api->get_vendors();
                         <li><a href="#tab-metafields">Metafields</a></li>
                     </ul>
 
+                    <!-- General Tab -->
                     <div id="tab-general" class="tab-content">
                         <table class="form-table">
                             <tr>
@@ -109,6 +151,22 @@ $vendors = $shopify_api->get_vendors();
                             </tr>
 
                             <tr>
+                                <th scope="row"><label for="product-vendor">Vendor</label></th>
+                                <td>
+                                    <input type="text" id="product-vendor" name="vendor" class="regular-text" list="vendor-list" />
+                                    <datalist id="vendor-list"></datalist>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <th scope="row"><label for="product-type">Product Type</label></th>
+                                <td>
+                                    <input type="text" id="product-type" name="product_type" class="regular-text" />
+                                    <p class="description">Used for filtering and organizing products (e.g., T-Shirt, Mug, etc.)</p>
+                                </td>
+                            </tr>
+
+                            <tr>
                                 <th scope="row"><label for="product-status">Status</label></th>
                                 <td>
                                     <select id="product-status" name="published">
@@ -118,36 +176,42 @@ $vendors = $shopify_api->get_vendors();
                                 </td>
                             </tr>
                         </table>
+
+                        <!-- Print Methods Section -->
+                        <div id="print-methods-container"></div>
                     </div>
 
+                    <!-- Images Tab -->
                     <div id="tab-images" class="tab-content">
                         <div class="images-section">
                             <h3>Product Images</h3>
-                            <p class="description">Drag to reorder. First image is the main product image.</p>
+                            <p class="description">
+                                Drag to reorder. First image is the main product image. 
+                                You can add images from your WordPress Media Library.
+                            </p>
 
                             <div id="sspu-images-grid" class="images-grid sortable"></div>
 
                             <div class="image-actions">
-                                <button type="button" id="sspu-add-images" class="button">Add Images</button>
-                                <button type="button" id="sspu-ai-edit-images" class="button">Edit with AI</button>
+                                <button type="button" id="sspu-add-images" class="button button-primary">
+                                    <span class="dashicons dashicons-plus-alt"></span> Add Images from Media
+                                </button>
+                                <button type="button" id="sspu-ai-edit-images" class="button">
+                                    <span class="dashicons dashicons-art"></span> Edit with AI
+                                </button>
                             </div>
                         </div>
                     </div>
 
+                    <!-- Variants Tab -->
                     <div id="tab-variants" class="tab-content">
                         <div class="variants-section">
-                            <div class="variants-header">
-                                <h3>Product Variants</h3>
-                                <div class="bulk-actions">
-                                    <button type="button" id="bulk-edit-prices" class="button">Bulk Edit Prices</button>
-                                    <button type="button" id="bulk-edit-inventory" class="button">Bulk Edit Inventory</button>
-                                </div>
-                            </div>
-
+                            <h3>Product Variants</h3>
                             <div id="sspu-variants-table"></div>
                         </div>
                     </div>
 
+                    <!-- SEO Tab -->
                     <div id="tab-seo" class="tab-content">
                         <table class="form-table">
                             <tr>
@@ -179,62 +243,42 @@ $vendors = $shopify_api->get_vendors();
                                         <?php echo esc_html('https://' . get_option('sspu_shopify_store_name') . '.myshopify.com/products/'); ?><span id="url-handle-preview"></span>
                                     </div>
                                     <input type="text" id="url-handle" name="url_handle" class="regular-text" />
+                                    <p class="description">The URL-friendly version of the product title.</p>
                                 </td>
                             </tr>
                         </table>
                     </div>
 
+                    <!-- Organization Tab -->
                     <div id="tab-organization" class="tab-content">
                         <table class="form-table">
-                            <tr>
-                                <th scope="row"><label for="product-vendor">Vendor</label></th>
-                                <td>
-                                    <input type="text" id="product-vendor" name="vendor" class="regular-text" list="vendor-list" />
-                                    <datalist id="vendor-list">
-                                        <?php foreach ($vendors as $vendor) : ?>
-                                            <option value="<?php echo esc_attr($vendor); ?>">
-                                        <?php endforeach; ?>
-                                    </datalist>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <th scope="row"><label for="product-type">Product Type</label></th>
-                                <td>
-                                    <input type="text" id="product-type" name="product_type" class="regular-text" />
-                                    <p class="description">Used for filtering and organizing products.</p>
-                                </td>
-                            </tr>
-
                             <tr>
                                 <th scope="row"><label for="product-tags">Tags</label></th>
                                 <td>
                                     <input type="text" id="product-tags" name="tags" class="large-text" />
-                                    <p class="description">Comma-separated tags for categorization.</p>
+                                    <p class="description">Comma-separated tags for categorization and search.</p>
                                 </td>
                             </tr>
 
                             <tr>
                                 <th scope="row"><label>Collections</label></th>
                                 <td>
-                                    <div id="product-collections" class="collections-checklist">
-                                        <?php foreach ($collections as $collection) : ?>
-                                            <label>
-                                                <input type="checkbox" name="collection_ids[]" value="<?php echo esc_attr($collection['id']); ?>" />
-                                                <?php echo esc_html($collection['title']); ?>
-                                            </label>
-                                        <?php endforeach; ?>
-                                    </div>
+                                    <div id="product-collections" class="collections-checklist"></div>
+                                    <p class="description">Select collections this product belongs to.</p>
                                 </td>
                             </tr>
                         </table>
                     </div>
 
+                    <!-- Metafields Tab -->
                     <div id="tab-metafields" class="tab-content">
                         <div class="metafields-section">
                             <h3>Custom Metafields</h3>
+                            <p class="description">
+                                Add custom data fields to extend product information. 
+                                These can be used by your theme or apps.
+                            </p>
                             <div id="metafields-list"></div>
-                            <button type="button" id="add-metafield" class="button">Add Metafield</button>
                         </div>
                     </div>
                 </div>
@@ -248,12 +292,7 @@ $vendors = $shopify_api->get_vendors();
             </form>
         </div>
 
-        <div id="preview-modal" style="display: none;">
-            <div class="preview-container">
-                <iframe id="preview-frame" width="100%" height="600"></iframe>
-            </div>
-        </div>
-
+        <!-- Bulk Price Edit Modal Template -->
         <div id="bulk-price-modal" style="display: none;">
             <h3>Bulk Edit Variant Prices</h3>
             <div class="bulk-edit-options">
@@ -273,3 +312,22 @@ $vendors = $shopify_api->get_vendors();
         </div>
     </div>
 </div>
+
+<script>
+// Advanced filters toggle
+jQuery('#toggle-advanced-filters').on('click', function(e) {
+    e.preventDefault();
+    jQuery('.advanced-filters').slideToggle();
+    const $icon = jQuery(this).find('.dashicons');
+    $icon.toggleClass('dashicons-admin-settings dashicons-no-alt');
+});
+
+// Refresh all products
+jQuery('#refresh-all-products').on('click', function(e) {
+    e.preventDefault();
+    if (window.SSPULiveEditor) {
+        window.SSPULiveEditor.clearCache();
+        window.SSPULiveEditor.searchProducts();
+    }
+});
+</script>

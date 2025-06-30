@@ -3,211 +3,6 @@ if (!defined('WPINC')) {
     die;
 }
 
-/**
- * SSPU AJAX Handler Registration
- */
-add_action('wp_ajax_sspu_check_server_capabilities', 'sspu_check_server_capabilities');
-// Note: Other AJAX actions are registered within the SSPU_Admin_Ajax class init method.
-
-
-/**
- * Enqueue additional scripts needed for mask functionality
- */
-add_action('admin_enqueue_scripts', 'sspu_enqueue_mask_scripts');
-
-function sspu_enqueue_mask_scripts($hook) {
-    // Only load on your plugin pages
-    if (strpos($hook, 'sspu') === false) {
-        return;
-    }
-
-    // Enqueue Cropper.js for mask selection
-    wp_enqueue_script(
-        'cropperjs',
-        'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js',
-        array('jquery'), // Depends on jQuery
-        '1.5.13',
-        true
-    );
-
-    wp_enqueue_style(
-        'cropperjs',
-        'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css',
-        array(),
-        '1.5.13'
-    );
-
-    // Add inline styles for proper mask display
-    wp_add_inline_style('sspu-admin-style', '
-        /* Mask Preview Modal Styles */
-        .sspu-lightbox-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            z-index: 100000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .sspu-lightbox-content {
-            background: #fff;
-            padding: 30px;
-            max-width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-            position: relative;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
-
-        .sspu-lightbox-close {
-            position: absolute;
-            top: 10px;
-            right: 15px;
-            font-size: 30px;
-            font-weight: bold;
-            color: #999;
-            cursor: pointer;
-            transition: color 0.3s;
-            line-height: 1;
-            padding: 5px;
-        }
-
-        .sspu-lightbox-close:hover,
-        .sspu-lightbox-close:focus {
-            color: #333;
-            text-decoration: none;
-        }
-
-        #mask-preview-container {
-            display: inline-block;
-            position: relative;
-            line-height: 0;
-            background: #f0f0f0;
-            min-width: 400px;
-            min-height: 400px;
-        }
-
-        #mask-overlay {
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            pointer-events: none;
-        }
-
-        #preview-mask-image {
-            pointer-events: auto !important;
-            cursor: move;
-            position: absolute !important;
-            display: block !important;
-        }
-
-        #preview-base-image {
-            display: block;
-            position: relative;
-            z-index: 1;
-        }
-
-        /* Cropper.js customization */
-        .cropper-view-box {
-            outline: 1px solid #39f;
-        }
-
-        .cropper-line {
-            background-color: #39f;
-        }
-
-        .cropper-point {
-            background-color: #39f;
-        }
-
-        /* Design files status */
-        .sspu-design-files-status {
-            font-size: 12px;
-            color: #46b450;
-            margin-top: 5px;
-            font-weight: 500;
-        }
-
-        /* Mask adjustment controls */
-        #mask-preview-modal input[type="range"] {
-            width: 100%;
-            margin: 5px 0;
-        }
-
-        #mask-preview-modal button {
-            margin: 5px;
-        }
-    ');
-
-    // Add JavaScript to check for required libraries
-    wp_add_inline_script('sspu-variants', '
-        jQuery(document).ready(function($) {
-            // Check if Cropper.js is loaded
-            if (typeof Cropper === "undefined") {
-                console.error("SSPU: Cropper.js library not loaded!");
-            }
-
-            // Check if wp.media is available
-            if (typeof wp === "undefined" || typeof wp.media === "undefined") {
-                console.error("SSPU: WordPress media library not available!");
-            }
-        });
-    ');
-}
-
-/**
- * Additional helper function to test if image libraries are available
- */
-function sspu_check_image_libraries() {
-    $libraries = array();
-
-    // Check for Imagick
-    if (class_exists('Imagick')) {
-        $libraries['imagick'] = true;
-        $imagick = new Imagick();
-        $libraries['imagick_version'] = $imagick->getVersion();
-    } else {
-        $libraries['imagick'] = false;
-    }
-
-    // Check for GD
-    if (extension_loaded('gd') && function_exists('gd_info')) {
-        $libraries['gd'] = true;
-        $libraries['gd_info'] = gd_info();
-    } else {
-        $libraries['gd'] = false;
-    }
-
-    return $libraries;
-}
-
-/**
- * AJAX endpoint to check server capabilities (Global Scope)
- */
-function sspu_check_server_capabilities() {
-    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'sspu_ajax_nonce')) {
-        wp_send_json_error(['message' => 'Invalid security token']);
-    }
-
-    $capabilities = array(
-        'libraries' => sspu_check_image_libraries(),
-        'upload_max_filesize' => ini_get('upload_max_filesize'),
-        'post_max_size' => ini_get('post_max_size'),
-        'memory_limit' => ini_get('memory_limit'),
-        'max_execution_time' => ini_get('max_execution_time')
-    );
-
-    wp_send_json_success($capabilities);
-}
-
-
 class SSPU_Admin_Ajax
 {
     /**
@@ -305,36 +100,35 @@ class SSPU_Admin_Ajax
 
         // Utility handlers
         add_action('wp_ajax_sspu_refresh_nonce', [$this, 'handle_refresh_nonce']);
-        add_action('wp_ajax_sspu_check_server_capabilities', [$this, 'handle_check_server_capabilities']);
     }
 
     /**
      * Delegate to product handler
      */
     public function delegate_to_product_handler()
-    {
-        error_log('SSPU: delegate_to_product_handler called');
-        error_log('SSPU: POST data keys: ' . implode(', ', array_keys($_POST)));
+{
+    error_log('SSPU: delegate_to_product_handler called');
+    error_log('SSPU: POST data keys: ' . implode(', ', array_keys($_POST)));
 
-        try {
-            if (!class_exists('SSPU_Admin_Product_Handler')) {
-                error_log('SSPU: SSPU_Admin_Product_Handler class not found');
-                wp_send_json_error(['message' => 'Product handler class not found']);
-                return;
-            }
-
-            error_log('SSPU: Creating product handler instance...');
-            $product_handler = new SSPU_Admin_Product_Handler();
-
-            error_log('SSPU: Calling handle_product_submission...');
-            $product_handler->handle_product_submission();
-
-        } catch (Exception $e) {
-            error_log('SSPU: Exception in delegate_to_product_handler: ' . $e->getMessage());
-            error_log('SSPU: Stack trace: ' . $e->getTraceAsString());
-            wp_send_json_error(['message' => 'Handler error: ' . $e->getMessage()]);
+    try {
+        if (!class_exists('SSPU_Admin_Product_Handler')) {
+            error_log('SSPU: SSPU_Admin_Product_Handler class not found');
+            wp_send_json_error(['message' => 'Product handler class not found']);
+            return;
         }
+
+        error_log('SSPU: Creating product handler instance...');
+        $product_handler = new SSPU_Admin_Product_Handler();
+
+        error_log('SSPU: Calling handle_product_submission...');
+        $product_handler->handle_product_submission();
+
+    } catch (Exception $e) {
+        error_log('SSPU: Exception in delegate_to_product_handler: ' . $e->getMessage());
+        error_log('SSPU: Stack trace: ' . $e->getTraceAsString());
+        wp_send_json_error(['message' => 'Handler error: ' . $e->getMessage()]);
     }
+}
 
     /**
      * Product generation handlers
@@ -826,19 +620,23 @@ class SSPU_Admin_Ajax
     /**
      * Handle refresh nonce
      */
-    public function handle_refresh_nonce()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'sspu_nonce');
+/**
+ * Handle refresh nonce - FIXED VERSION
+ */
+public function handle_refresh_nonce()
+{
+    // FIXED: Use sspu_ajax_nonce for verification
+    check_ajax_referer('sspu_ajax_nonce', 'sspu_nonce');
 
-        if (!current_user_can('upload_shopify_products')) {
-            wp_send_json_error(['message' => 'Permission denied']);
-            return;
-        }
-
-        wp_send_json_success([
-            'nonce' => wp_create_nonce('sspu_ajax_nonce')
-        ]);
+    if (!current_user_can('upload_shopify_products')) {
+        wp_send_json_error(['message' => 'Permission denied']);
+        return;
     }
+
+    wp_send_json_success([
+        'nonce' => wp_create_nonce('sspu_ajax_nonce')  // FIXED: Create with correct action
+    ]);
+}
 
     /**
      * Handle scrape alibaba variants
@@ -915,8 +713,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle save draft
      */
-    public function handle_save_draft()
-    {
+    public function handle_save_draft() {
         try {
             check_ajax_referer('sspu_ajax_nonce', 'nonce');
             if (!current_user_can('upload_shopify_products')) {
@@ -954,8 +751,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle load draft
      */
-    public function handle_load_draft()
-    {
+    public function handle_load_draft() {
         try {
             check_ajax_referer('sspu_ajax_nonce', 'nonce');
             if (!current_user_can('upload_shopify_products')) {
@@ -985,8 +781,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle auto save draft
      */
-    public function handle_auto_save_draft()
-    {
+    public function handle_auto_save_draft() {
         try {
             check_ajax_referer('sspu_ajax_nonce', 'nonce');
             if (!current_user_can('upload_shopify_products')) {
@@ -1027,8 +822,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle test OpenAI API
      */
-    public function handle_test_openai_api()
-    {
+    public function handle_test_openai_api() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1052,8 +846,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle test Gemini API
      */
-    public function handle_test_gemini_api()
-    {
+    public function handle_test_gemini_api() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1076,8 +869,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle validate image
      */
-    public function handle_validate_image()
-    {
+    public function handle_validate_image() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1106,8 +898,7 @@ class SSPU_Admin_Ajax
     /**
      * Handle upload images
      */
-    public function handle_upload_images()
-    {
+    public function handle_upload_images() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1162,121 +953,401 @@ class SSPU_Admin_Ajax
     }
 
     /**
-     * AJAX handler for creating masked image with coordinates.
-     * This handles the rectangular mask selection from the Cropper.js tool
+     * Handle create masked image
      */
-    public function handle_create_masked_image()
-    {
-        // Verify nonce
+    public function handle_create_masked_image() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
 
-        // Get parameters
-        $image_id = isset($_POST['image_id']) ? intval($_POST['image_id']) : 0;
-        $mask_coordinates = isset($_POST['mask_coordinates']) ? $_POST['mask_coordinates'] : null;
-
-        // Validate inputs
-        if (!$image_id || !$mask_coordinates) {
-            wp_send_json_error(['message' => 'Missing required parameters']);
+        if (!current_user_can('upload_shopify_products')) {
+            wp_send_json_error(['message' => 'Permission denied']);
+            return;
         }
 
-        // Validate coordinates
-        $x = isset($mask_coordinates['x']) ? intval($mask_coordinates['x']) : 0;
-        $y = isset($mask_coordinates['y']) ? intval($mask_coordinates['y']) : 0;
-        $width = isset($mask_coordinates['width']) ? intval($mask_coordinates['width']) : 0;
-        $height = isset($mask_coordinates['height']) ? intval($mask_coordinates['height']) : 0;
+        $image_id = absint($_POST['image_id']);
+        $mask_coordinates = $_POST['mask_coordinates'];
 
-        if ($width <= 0 || $height <= 0) {
-            wp_send_json_error(['message' => 'Invalid mask dimensions']);
+        if (!$image_id || !is_array($mask_coordinates) || empty($mask_coordinates)) {
+            wp_send_json_error(['message' => 'Missing required parameters or invalid mask coordinates.']);
+            return;
         }
 
-        // Get the original image
-        $original_image_path = get_attached_file($image_id);
-        if (!$original_image_path || !file_exists($original_image_path)) {
-            wp_send_json_error(['message' => 'Original image not found']);
+        // Sanitize coordinates explicitly
+        $crop_x = intval($mask_coordinates['x'] ?? 0);
+        $crop_y = intval($mask_coordinates['y'] ?? 0);
+        $crop_width = intval($mask_coordinates['width'] ?? 0);
+        $crop_height = intval($mask_coordinates['height'] ?? 0);
+
+        $image_path = get_attached_file($image_id);
+        if (!$image_path || !file_exists($image_path)) {
+            wp_send_json_error(['message' => 'Image file not found on server.']);
+            return;
         }
 
-        try {
-            // Check if Imagick is available
-            if (class_exists('Imagick')) {
-                $result = $this->create_masked_image_imagick_rect($original_image_path, $image_id, $x, $y, $width, $height);
-            } else {
-                // Fallback to GD
-                $result = $this->create_masked_image_gd_rect($original_image_path, $image_id, $x, $y, $width, $height);
-            }
-
-            if ($result['success']) {
-                wp_send_json_success([
-                    'background_url' => $result['background_url'],
-                    'mask_url' => $result['mask_url'],
-                    'message' => 'Design files created successfully'
-                ]);
-            } else {
-                wp_send_json_error(['message' => $result['error']]);
-            }
-
-        } catch (Exception $e) {
-            wp_send_json_error(['message' => 'Error processing image: ' . $e->getMessage()]);
+        $image_info = getimagesize($image_path);
+        if (!$image_info) {
+            wp_send_json_error(['message' => 'Invalid image file or unable to get image dimensions.']);
+            return;
         }
+
+        $mime_type = $image_info['mime'];
+        $width = $image_info[0];
+        $height = $image_info[1];
+
+        // Create image resource from source image
+        $source_image = null;
+        switch ($mime_type) {
+            case 'image/jpeg':
+                $source_image = imagecreatefromjpeg($image_path);
+                break;
+            case 'image/png':
+                $source_image = imagecreatefrompng($image_path);
+                break;
+            case 'image/gif':
+                $source_image = imagecreatefromgif($image_path);
+                break;
+            case 'image/webp':
+                if (function_exists('imagecreatefromwebp')) {
+                    $source_image = imagecreatefromwebp($image_path);
+                }
+                break;
+            default:
+                wp_send_json_error(['message' => 'Unsupported image type: ' . $mime_type]);
+                return;
+        }
+
+        if (!$source_image) {
+            wp_send_json_error(['message' => 'Failed to create image resource from original file.']);
+            return;
+        }
+
+        // Adjust crop coordinates to stay within image bounds
+        $crop_x = max(0, $crop_x);
+        $crop_y = max(0, $crop_y);
+        $crop_width = min($crop_width, $width - $crop_x);
+        $crop_height = min($crop_height, $height - $crop_y);
+
+        if ($crop_width <= 0 || $crop_height <= 0) {
+            imagedestroy($source_image);
+            wp_send_json_error(['message' => 'Invalid crop area dimensions.']);
+            return;
+        }
+
+        // Create background image (full image)
+        $background_image = imagecreatetruecolor($width, $height);
+        imagecopy($background_image, $source_image, 0, 0, 0, 0, $width, $height);
+
+        // Create mask image (original image with cropped area transparent)
+        $mask_image = imagecreatetruecolor($width, $height);
+        imagealphablending($mask_image, false);
+        imagesavealpha($mask_image, true);
+
+        imagecopy($mask_image, $source_image, 0, 0, 0, 0, $width, $height);
+
+        // Make the cropped area transparent in the mask image
+        $transparent = imagecolorallocatealpha($mask_image, 0, 0, 0, 127);
+        imagefilledrectangle($mask_image, $crop_x, $crop_y,
+            $crop_x + $crop_width,
+            $crop_y + $crop_height,
+            $transparent);
+
+        $upload_dir = wp_upload_dir();
+        $base_name = pathinfo($image_path, PATHINFO_FILENAME);
+        $timestamp = time();
+
+        $background_filename = $base_name . '_background_' . $timestamp . '.png';
+        $background_path = $upload_dir['path'] . '/' . $background_filename;
+
+        if (!wp_mkdir_p($upload_dir['path'])) {
+            imagedestroy($source_image);
+            imagedestroy($background_image);
+            imagedestroy($mask_image);
+            wp_send_json_error(['message' => 'Unable to create upload directory.']);
+            return;
+        }
+
+        imagepng($background_image, $background_path, 9);
+
+        $mask_filename = $base_name . '_mask_' . $timestamp . '.png';
+        $mask_path = $upload_dir['path'] . '/' . $mask_filename;
+        imagepng($mask_image, $mask_path, 9);
+
+        // Destroy image resources to free up memory
+        imagedestroy($source_image);
+        imagedestroy($background_image);
+        imagedestroy($mask_image);
+
+        // Create WordPress attachments for the new images
+        $background_attachment_id = $this->create_attachment($background_path, $background_filename, 'Design Tool Background - ' . $base_name);
+        $mask_attachment_id = $this->create_attachment($mask_path, $mask_filename, 'Design Tool Mask - ' . $base_name);
+
+        if (!$background_attachment_id || !$mask_attachment_id) {
+            @unlink($background_path);
+            @unlink($mask_path);
+            wp_send_json_error(['message' => 'Failed to create WordPress attachments for generated images.']);
+            return;
+        }
+
+        $background_url = wp_get_attachment_url($background_attachment_id);
+        $mask_url = wp_get_attachment_url($mask_attachment_id);
+
+        if (class_exists('SSPU_Analytics')) {
+            $analytics = new SSPU_Analytics();
+            $analytics->log_activity(get_current_user_id(), 'design_files_created', [
+                'original_image_id' => $image_id,
+                'background_id' => $background_attachment_id,
+                'mask_id' => $mask_attachment_id,
+                'crop_area' => $mask_coordinates
+            ]);
+        }
+
+        wp_send_json_success([
+            'background_url' => $background_url,
+            'mask_url' => $mask_url,
+            'background_id' => $background_attachment_id,
+            'mask_id' => $mask_attachment_id,
+            'message' => 'Design files created successfully'
+        ]);
     }
 
     /**
-     * AJAX handler for creating masked image with a custom mask file and adjustments.
-     * UPDATED to use new simplified and reliable logic.
+     * Handle create masked image with custom mask
      */
-    public function handle_create_masked_image_with_custom_mask()
-    {
-        try {
-            error_log('SSPU: === CUSTOM MASK HANDLER START ===');
+    /**
+ * Handle create masked image with custom mask
+ */
+/**
+ * Handle create masked image with custom mask
+ */
+public function handle_create_masked_image_with_custom_mask() {
+    check_ajax_referer('sspu_ajax_nonce', 'nonce');
 
-            // Verify nonce
-            check_ajax_referer('sspu_ajax_nonce', 'nonce');
+    if (!current_user_can('upload_shopify_products')) {
+        wp_send_json_error(['message' => 'Permission denied']);
+        return;
+    }
 
-            // Get parameters
-            $image_id = isset($_POST['image_id']) ? intval($_POST['image_id']) : 0;
-            $custom_mask_url = isset($_POST['custom_mask_url']) ? esc_url_raw($_POST['custom_mask_url']) : '';
-            $mask_adjustments = isset($_POST['mask_adjustments']) ? $_POST['mask_adjustments'] : [];
+    $image_id = absint($_POST['image_id']);
+    $custom_mask_url = esc_url_raw($_POST['custom_mask_url']);
+    $mask_adjustments = isset($_POST['mask_adjustments']) ? $_POST['mask_adjustments'] : [];
 
-            error_log('SSPU: Image ID: ' . $image_id);
-            error_log('SSPU: Mask URL: ' . $custom_mask_url);
+    if (!$image_id || !$custom_mask_url) {
+        wp_send_json_error(['message' => 'Missing required parameters.']);
+        return;
+    }
 
-            // Validate inputs
-            if (!$image_id || !$custom_mask_url) {
-                wp_send_json_error(['message' => 'Missing required parameters']);
-                return;
+    // Get adjustment values
+    $mask_size = isset($mask_adjustments['size']) ? floatval($mask_adjustments['size']) / 100 : 1.0;
+    $mask_x = isset($mask_adjustments['x']) ? floatval($mask_adjustments['x']) / 100 : 0.5;
+    $mask_y = isset($mask_adjustments['y']) ? floatval($mask_adjustments['y']) / 100 : 0.5;
+
+    // Get the original image path
+    $image_path = get_attached_file($image_id);
+    if (!$image_path || !file_exists($image_path)) {
+        wp_send_json_error(['message' => 'Original image file not found.']);
+        return;
+    }
+
+    // Download the custom mask to a temporary file
+    require_once(ABSPATH . 'wp-admin/includes/file.php');
+    $mask_tmp = download_url($custom_mask_url, 300);
+
+    if (is_wp_error($mask_tmp)) {
+        wp_send_json_error(['message' => 'Failed to download custom mask: ' . $mask_tmp->get_error_message()]);
+        return;
+    }
+
+    $image_info = getimagesize($image_path);
+    if (!$image_info) {
+        @unlink($mask_tmp);
+        wp_send_json_error(['message' => 'Invalid original image file.']);
+        return;
+    }
+
+    $mime_type = $image_info['mime'];
+    $width = $image_info[0];
+    $height = $image_info[1];
+
+    // Create image resource from source image
+    $source_image = null;
+    switch ($mime_type) {
+        case 'image/jpeg':
+            $source_image = imagecreatefromjpeg($image_path);
+            break;
+        case 'image/png':
+            $source_image = imagecreatefrompng($image_path);
+            break;
+        case 'image/gif':
+            $source_image = imagecreatefromgif($image_path);
+            break;
+        case 'image/webp':
+            if (function_exists('imagecreatefromwebp')) {
+                $source_image = imagecreatefromwebp($image_path);
             }
+            break;
+    }
 
-            // Get the original image
-            $original_image_path = get_attached_file($image_id);
-            if (!$original_image_path || !file_exists($original_image_path)) {
-                wp_send_json_error(['message' => 'Original image not found']);
-                return;
+    if (!$source_image) {
+        @unlink($mask_tmp);
+        wp_send_json_error(['message' => 'Failed to create image resource from original file.']);
+        return;
+    }
+
+    // Load the custom mask
+    $mask_info = getimagesize($mask_tmp);
+    if (!$mask_info) {
+        imagedestroy($source_image);
+        @unlink($mask_tmp);
+        wp_send_json_error(['message' => 'Invalid mask image file.']);
+        return;
+    }
+
+    $mask_original = null;
+    switch ($mask_info['mime']) {
+        case 'image/jpeg':
+            $mask_original = imagecreatefromjpeg($mask_tmp);
+            break;
+        case 'image/png':
+            $mask_original = imagecreatefrompng($mask_tmp);
+            break;
+        case 'image/gif':
+            $mask_original = imagecreatefromgif($mask_tmp);
+            break;
+        case 'image/webp':
+            if (function_exists('imagecreatefromwebp')) {
+                $mask_original = imagecreatefromwebp($mask_tmp);
             }
+            break;
+    }
 
-            // Check if Imagick is available
-            if (class_exists('Imagick')) {
-                $result = $this->create_masked_image_with_custom_mask_imagick($original_image_path, $image_id, $custom_mask_url, $mask_adjustments);
-            } else {
-                error_log('SSPU: Imagick not available, using GD');
-                $result = $this->create_masked_image_with_custom_mask_gd($original_image_path, $image_id, $custom_mask_url, $mask_adjustments);
+    @unlink($mask_tmp); // Clean up temp file
+
+    if (!$mask_original) {
+        imagedestroy($source_image);
+        wp_send_json_error(['message' => 'Failed to load custom mask image.']);
+        return;
+    }
+
+    // Create adjusted mask
+    $mask_orig_width = imagesx($mask_original);
+    $mask_orig_height = imagesy($mask_original);
+
+    // Calculate scaled dimensions
+    $scaled_width = $mask_orig_width * $mask_size;
+    $scaled_height = $mask_orig_height * $mask_size;
+
+    // Calculate position
+    $pos_x = ($width * $mask_x) - ($scaled_width / 2);
+    $pos_y = ($height * $mask_y) - ($scaled_height / 2);
+
+    // Create a new mask image with adjustments applied
+    $mask_image = imagecreatetruecolor($width, $height);
+    imagealphablending($mask_image, false);
+    imagesavealpha($mask_image, true);
+
+    // Fill with black (areas to be made transparent)
+    $black = imagecolorallocate($mask_image, 0, 0, 0);
+    imagefill($mask_image, 0, 0, $black);
+
+    // Copy and resize the mask to the specified position
+    imagecopyresampled(
+        $mask_image,
+        $mask_original,
+        $pos_x, $pos_y,  // Destination position
+        0, 0,            // Source position
+        $scaled_width, $scaled_height,   // Destination size
+        $mask_orig_width, $mask_orig_height  // Source size
+    );
+
+    imagedestroy($mask_original);
+
+    // Create background image (full original image)
+    $background_image = imagecreatetruecolor($width, $height);
+    imagecopy($background_image, $source_image, 0, 0, 0, 0, $width, $height);
+
+    // Create final mask image by applying the custom mask
+    $final_mask = imagecreatetruecolor($width, $height);
+    imagealphablending($final_mask, false);
+    imagesavealpha($final_mask, true);
+
+    // Copy original image
+    imagecopy($final_mask, $source_image, 0, 0, 0, 0, $width, $height);
+
+    // Apply mask - white/light areas in mask = design area (kept), black = transparent
+    for ($x = 0; $x < $width; $x++) {
+        for ($y = 0; $y < $height; $y++) {
+            $mask_color = imagecolorat($mask_image, $x, $y);
+            $mask_rgba = imagecolorsforindex($mask_image, $mask_color);
+
+            // Calculate brightness (0-255)
+            $brightness = ($mask_rgba['red'] + $mask_rgba['green'] + $mask_rgba['blue']) / 3;
+
+            // If dark (brightness < 128), make transparent
+            if ($brightness < 128) {
+                $transparent = imagecolorallocatealpha($final_mask, 0, 0, 0, 127);
+                imagesetpixel($final_mask, $x, $y, $transparent);
             }
-
-            if ($result['success']) {
-                wp_send_json_success($result['data']);
-            } else {
-                wp_send_json_error(['message' => $result['error']]);
-            }
-
-        } catch (Exception $e) {
-            error_log('SSPU: Exception in mask handler: ' . $e->getMessage());
-            wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
         }
     }
 
+    $upload_dir = wp_upload_dir();
+    $base_name = pathinfo($image_path, PATHINFO_FILENAME);
+    $timestamp = time();
+
+    // Save background image
+    $background_filename = $base_name . '_background_custom_' . $timestamp . '.png';
+    $background_path = $upload_dir['path'] . '/' . $background_filename;
+    imagepng($background_image, $background_path, 9);
+
+    // Save mask image
+    $mask_filename = $base_name . '_mask_custom_' . $timestamp . '.png';
+    $mask_path = $upload_dir['path'] . '/' . $mask_filename;
+    imagepng($final_mask, $mask_path, 9);
+
+    // Clean up
+    imagedestroy($source_image);
+    imagedestroy($background_image);
+    imagedestroy($mask_image);
+    imagedestroy($final_mask);
+
+    // Create WordPress attachments
+    $background_attachment_id = $this->create_attachment($background_path, $background_filename, 'Custom Mask Background - ' . $base_name);
+    $mask_attachment_id = $this->create_attachment($mask_path, $mask_filename, 'Custom Mask - ' . $base_name);
+
+    if (!$background_attachment_id || !$mask_attachment_id) {
+        @unlink($background_path);
+        @unlink($mask_path);
+        wp_send_json_error(['message' => 'Failed to create WordPress attachments.']);
+        return;
+    }
+
+    $background_url = wp_get_attachment_url($background_attachment_id);
+    $mask_url = wp_get_attachment_url($mask_attachment_id);
+
+    if (class_exists('SSPU_Analytics')) {
+        $analytics = new SSPU_Analytics();
+        $analytics->log_activity(get_current_user_id(), 'custom_mask_applied', [
+            'original_image_id' => $image_id,
+            'background_id' => $background_attachment_id,
+            'mask_id' => $mask_attachment_id,
+            'custom_mask_url' => $custom_mask_url,
+            'adjustments' => $mask_adjustments
+        ]);
+    }
+
+    wp_send_json_success([
+        'background_url' => $background_url,
+        'mask_url' => $mask_url,
+        'background_id' => $background_attachment_id,
+        'mask_id' => $mask_attachment_id,
+        'message' => 'Design files created with custom mask successfully'
+    ]);
+}
+
+
     /**
-     * Handle download external image
+     * Handle download external image - IMPLEMENTED DIRECTLY
      */
-    public function handle_download_external_image()
-    {
+    public function handle_download_external_image() {
         error_log('[SSPU Download] ===== DOWNLOAD REQUEST START =====');
 
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
@@ -1400,8 +1471,7 @@ class SSPU_Admin_Ajax
     }
 
     // Delegate remaining handlers to their respective classes
-    public function handle_get_current_alibaba_url()
-    {
+    public function handle_get_current_alibaba_url() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1424,8 +1494,7 @@ class SSPU_Admin_Ajax
         wp_send_json_error(['message' => 'No URL assigned']);
     }
 
-    public function handle_fetch_alibaba_product_name()
-    {
+    public function handle_fetch_alibaba_product_name() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1473,8 +1542,7 @@ class SSPU_Admin_Ajax
         }
     }
 
-    public function handle_detect_color()
-    {
+    public function handle_detect_color() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
 
         if (!current_user_can('upload_shopify_products')) {
@@ -1555,8 +1623,7 @@ class SSPU_Admin_Ajax
         }
     }
 
-    public function handle_fetch_alibaba_moq()
-    {
+    public function handle_fetch_alibaba_moq() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
 
         if (!current_user_can('upload_shopify_products')) {
@@ -1606,8 +1673,7 @@ class SSPU_Admin_Ajax
         }
     }
 
-    public function handle_fetch_alibaba_description()
-    {
+    public function handle_fetch_alibaba_description() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
 
         if (!current_user_can('upload_shopify_products')) {
@@ -1688,8 +1754,7 @@ class SSPU_Admin_Ajax
     }
 
     // Template handlers
-    public function handle_get_single_template_content()
-    {
+    public function handle_get_single_template_content() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1717,8 +1782,7 @@ class SSPU_Admin_Ajax
     }
 
     // Analytics proxy handlers
-    public function handle_get_analytics_proxy()
-    {
+    public function handle_get_analytics_proxy() {
         if (!class_exists('SSPU_Analytics')) {
             wp_send_json_error(['message' => 'Analytics class not found.']);
             return;
@@ -1727,13 +1791,11 @@ class SSPU_Admin_Ajax
         $analytics->handle_get_analytics();
     }
 
-    public function handle_export_analytics()
-    {
+    public function handle_export_analytics() {
         wp_send_json_error(['message' => 'Export functionality not yet implemented']);
     }
 
-    public function handle_get_user_activity_proxy()
-    {
+    public function handle_get_user_activity_proxy() {
         if (!class_exists('SSPU_Analytics')) {
             wp_send_json_error(['message' => 'Analytics class not found.']);
             return;
@@ -1742,8 +1804,7 @@ class SSPU_Admin_Ajax
         $analytics->handle_get_user_activity();
     }
 
-    public function handle_global_search_proxy()
-    {
+    public function handle_global_search_proxy() {
         if (!class_exists('SSPU_Search')) {
             wp_send_json_error(['message' => 'Search class not found.']);
             return;
@@ -1752,8 +1813,7 @@ class SSPU_Admin_Ajax
         $search->handle_global_search();
     }
 
-    public function handle_get_search_filters_proxy()
-    {
+    public function handle_get_search_filters_proxy() {
         if (!class_exists('SSPU_Search')) {
             wp_send_json_error(['message' => 'Search class not found.']);
             return;
@@ -1763,8 +1823,7 @@ class SSPU_Admin_Ajax
     }
 
     // Alibaba queue handlers
-    public function handle_request_alibaba_url()
-    {
+    public function handle_request_alibaba_url() {
         if (!class_exists('SSPU_Alibaba_Queue')) {
             wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
             return;
@@ -1773,8 +1832,7 @@ class SSPU_Admin_Ajax
         $queue->handle_request_url();
     }
 
-    public function handle_complete_alibaba_url()
-    {
+    public function handle_complete_alibaba_url() {
         if (!class_exists('SSPU_Alibaba_Queue')) {
             wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
             return;
@@ -1783,8 +1841,7 @@ class SSPU_Admin_Ajax
         $queue->handle_complete_url();
     }
 
-    public function handle_release_alibaba_url()
-    {
+    public function handle_release_alibaba_url() {
         if (!class_exists('SSPU_Alibaba_Queue')) {
             wp_send_json_error(['message' => 'Alibaba Queue class not found.']);
             return;
@@ -1794,8 +1851,7 @@ class SSPU_Admin_Ajax
     }
 
     // Image retriever handlers
-    public function handle_retrieve_alibaba_images()
-    {
+    public function handle_retrieve_alibaba_images() {
         if (!class_exists('SSPU_Image_Retriever')) {
             wp_send_json_error(['message' => 'Image Retriever class not found.']);
             return;
@@ -1805,8 +1861,7 @@ class SSPU_Admin_Ajax
     }
 
     // AI handlers
-    public function handle_ai_edit_image()
-    {
+    public function handle_ai_edit_image() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
@@ -1815,8 +1870,7 @@ class SSPU_Admin_Ajax
         $ai_editor->handle_ai_edit();
     }
 
-    public function handle_get_chat_history()
-    {
+    public function handle_get_chat_history() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
@@ -1825,8 +1879,7 @@ class SSPU_Admin_Ajax
         $ai_editor->handle_get_chat_history();
     }
 
-    public function handle_save_edited_image()
-    {
+    public function handle_save_edited_image() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
@@ -1836,8 +1889,7 @@ class SSPU_Admin_Ajax
     }
 
     // Template handlers
-    public function handle_get_image_templates()
-    {
+    public function handle_get_image_templates() {
         if (!class_exists('SSPU_Image_Templates')) {
             wp_send_json_error(['message' => 'Image Templates class not found.']);
             return;
@@ -1846,8 +1898,7 @@ class SSPU_Admin_Ajax
         $templates->handle_get_templates();
     }
 
-    public function handle_save_image_template()
-    {
+    public function handle_save_image_template() {
         if (!class_exists('SSPU_Image_Templates')) {
             wp_send_json_error(['message' => 'Image Templates class not found.']);
             return;
@@ -1856,8 +1907,7 @@ class SSPU_Admin_Ajax
         $templates->handle_save_template();
     }
 
-    public function handle_delete_image_template()
-    {
+    public function handle_delete_image_template() {
         if (!class_exists('SSPU_Image_Templates')) {
             wp_send_json_error(['message' => 'Image Templates class not found.']);
             return;
@@ -1867,8 +1917,7 @@ class SSPU_Admin_Ajax
     }
 
     // Mimic handlers
-    public function handle_get_mimic_images()
-    {
+    public function handle_get_mimic_images() {
         check_ajax_referer('sspu_ajax_nonce', 'nonce');
         if (!current_user_can('upload_shopify_products')) {
             wp_send_json_error(['message' => 'Permission denied']);
@@ -1917,8 +1966,7 @@ class SSPU_Admin_Ajax
         wp_send_json_success(['mimic_images' => $mimic_images]);
     }
 
-    public function handle_mimic_image()
-    {
+    public function handle_mimic_image() {
         if (!class_exists('SSPU_AI_Image_Editor')) {
             wp_send_json_error(['message' => 'AI Image Editor class not found.']);
             return;
@@ -2536,478 +2584,9 @@ class SSPU_Admin_Ajax
     }
 
     /**
-     * Handle AJAX endpoint to check server capabilities (Class Method)
-     */
-    public function handle_check_server_capabilities()
-    {
-        check_ajax_referer('sspu_ajax_nonce', 'nonce');
-
-        $capabilities = array(
-            'libraries' => $this->check_image_libraries(),
-            'upload_max_filesize' => ini_get('upload_max_filesize'),
-            'post_max_size' => ini_get('post_max_size'),
-            'memory_limit' => ini_get('memory_limit'),
-            'max_execution_time' => ini_get('max_execution_time')
-        );
-
-        wp_send_json_success($capabilities);
-    }
-
-    // =========================================================================
-    // HELPER METHODS
-    // =========================================================================
-
-    /**
-     * Create masked image using Imagick (for rectangular selections)
-     */
-    private function create_masked_image_imagick_rect($original_path, $image_id, $x, $y, $width, $height)
-    {
-        try {
-            // Load original image
-            $original = new Imagick($original_path);
-            $original_width = $original->getImageWidth();
-            $original_height = $original->getImageHeight();
-
-            // Ensure coordinates are within bounds
-            $x = max(0, min($x, $original_width - 1));
-            $y = max(0, min($y, $original_height - 1));
-            $width = min($width, $original_width - $x);
-            $height = min($height, $original_height - $y);
-
-            // Create background image (original with masked area transparent)
-            $background = clone $original;
-            $background->setImageFormat('png');
-            $background->setImageAlphaChannel(Imagick::ALPHACHANNEL_SET);
-
-            // Create a transparent rectangle for the design area
-            $transparent_overlay = new Imagick();
-            $transparent_overlay->newImage($width, $height, new ImagickPixel('transparent'));
-            $transparent_overlay->setImageFormat('png');
-
-            // Apply the transparent rectangle to the background
-            $background->compositeImage($transparent_overlay, Imagick::COMPOSITE_COPY, $x, $y);
-
-            // Save background
-            $upload_dir = wp_upload_dir();
-            $filename_base = 'design-' . $image_id . '-' . time();
-            $background_filename = $filename_base . '-background.png';
-            $background_path = $upload_dir['path'] . '/' . $background_filename;
-            $background->writeImage($background_path);
-
-            // Create visual mask (shows the design area clearly on top of the original)
-            $visual_mask = clone $original;
-            $visual_mask->setImageFormat('png');
-
-            // Create a semi-transparent white overlay for the design area
-            $highlight = new Imagick();
-            $highlight->newImage($width, $height, new ImagickPixel('rgba(255, 255, 255, 0.5)'));
-
-            // Composite the highlight onto the visual mask
-            $visual_mask->compositeImage($highlight, Imagick::COMPOSITE_OVER, $x, $y);
-
-            // Save visual mask
-            $mask_filename = $filename_base . '-mask.png';
-            $mask_path = $upload_dir['path'] . '/' . $mask_filename;
-            $visual_mask->writeImage($mask_path);
-
-            // Create attachments
-            $background_id = $this->create_attachment($background_path, $background_filename, 'Design Background');
-            $mask_id = $this->create_attachment($mask_path, $mask_filename, 'Design Mask');
-
-            if (!$background_id || !$mask_id) {
-                return ['success' => false, 'error' => 'Failed to create attachment records'];
-            }
-
-            return [
-                'success' => true,
-                'background_url' => wp_get_attachment_url($background_id),
-                'mask_url' => wp_get_attachment_url($mask_id)
-            ];
-
-        } catch (Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * Create masked image using GD (fallback for rectangular selections)
-     */
-    private function create_masked_image_gd_rect($original_path, $image_id, $x, $y, $width, $height)
-    {
-        try {
-            // Load original image
-            $original = imagecreatefromstring(file_get_contents($original_path));
-
-            if (!$original) {
-                return ['success' => false, 'error' => 'Failed to load original image using GD'];
-            }
-
-            $original_width = imagesx($original);
-            $original_height = imagesy($original);
-
-            // Ensure coordinates are within bounds
-            $x = max(0, min($x, $original_width - 1));
-            $y = max(0, min($y, $original_height - 1));
-            $width = min($width, $original_width - $x);
-            $height = min($height, $original_height - $y);
-
-            // Create background image with transparency
-            $background = imagecreatetruecolor($original_width, $original_height);
-            imagealphablending($background, false);
-            imagesavealpha($background, true);
-            imagecopy($background, $original, 0, 0, 0, 0, $original_width, $original_height);
-
-            // Make design area transparent
-            $transparent = imagecolorallocatealpha($background, 0, 0, 0, 127);
-            imagefilledrectangle($background, $x, $y, $x + $width, $y + $height, $transparent);
-
-            // Create visual mask
-            $mask = imagecreatetruecolor($original_width, $original_height);
-            imagecopy($mask, $original, 0, 0, 0, 0, $original_width, $original_height);
-
-            // Highlight design area (semi-transparent white)
-            $highlight_color = imagecolorallocatealpha($mask, 255, 255, 255, 64); // ~50% transparent
-            imagefilledrectangle($mask, $x, $y, $x + $width, $y + $height, $highlight_color);
-
-            // Save files
-            $upload_dir = wp_upload_dir();
-            $filename_base = 'design-' . $image_id . '-' . time();
-
-            // Save background
-            $background_filename = $filename_base . '-background.png';
-            $background_path = $upload_dir['path'] . '/' . $background_filename;
-            imagepng($background, $background_path);
-
-            // Save mask
-            $mask_filename = $filename_base . '-mask.png';
-            $mask_path = $upload_dir['path'] . '/' . $mask_filename;
-            imagepng($mask, $mask_path);
-
-            // Clean up
-            imagedestroy($original);
-            imagedestroy($background);
-            imagedestroy($mask);
-
-            // Create attachments
-            $background_id = $this->create_attachment($background_path, $background_filename, 'Design Background');
-            $mask_id = $this->create_attachment($mask_path, $mask_filename, 'Design Mask');
-
-            if (!$background_id || !$mask_id) {
-                return ['success' => false, 'error' => 'Failed to create attachment records'];
-            }
-
-            return [
-                'success' => true,
-                'background_url' => wp_get_attachment_url($background_id),
-                'mask_url' => wp_get_attachment_url($mask_id)
-            ];
-
-        } catch (Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-
-    /**
-     * Create masked image with custom mask using Imagick.
-     * UPDATED with new simplified logic.
-     */
-    private function create_masked_image_with_custom_mask_imagick($original_path, $image_id, $mask_url, $mask_adjustments)
-    {
-        try {
-            error_log('SSPU: Starting Imagick processing');
-
-            $mask_size = isset($mask_adjustments['size']) ? floatval($mask_adjustments['size']) : 100;
-            $mask_x = isset($mask_adjustments['x']) ? floatval($mask_adjustments['x']) : 50;
-            $mask_y = isset($mask_adjustments['y']) ? floatval($mask_adjustments['y']) : 50;
-
-            // Load original image
-            $original = new Imagick($original_path);
-            $original_width = $original->getImageWidth();
-            $original_height = $original->getImageHeight();
-            error_log('SSPU: Original dimensions: ' . $original_width . 'x' . $original_height);
-
-            // Load mask image
-            $mask = new Imagick();
-            if (filter_var($mask_url, FILTER_VALIDATE_URL)) {
-                $mask_data = @file_get_contents($mask_url);
-                if ($mask_data === false) {
-                    throw new Exception('Failed to download mask image');
-                }
-                $mask->readImageBlob($mask_data);
-            } else {
-                $local_path = $this->get_local_path_from_url($mask_url);
-                if (!$local_path || !file_exists($local_path)) {
-                    throw new Exception('Mask file not found');
-                }
-                $mask->readImage($local_path);
-            }
-
-            $mask_width = $mask->getImageWidth();
-            $mask_height = $mask->getImageHeight();
-            error_log('SSPU: Mask dimensions: ' . $mask_width . 'x' . $mask_height);
-
-            // Scale mask
-            $scale = $mask_size / 100;
-            $new_width = intval($mask_width * $scale);
-            $new_height = intval($mask_height * $scale);
-            if ($scale != 1) {
-                $mask->resizeImage($new_width, $new_height, Imagick::FILTER_LANCZOS, 1);
-                error_log('SSPU: Mask resized to: ' . $new_width . 'x' . $new_height);
-            }
-
-            // Create positioned mask canvas (white background)
-            $positioned_mask = new Imagick();
-            $positioned_mask->newImage($original_width, $original_height, new ImagickPixel('white'));
-            $positioned_mask->setImageFormat('png');
-
-            // Calculate position
-            $pos_x = intval(($mask_x / 100) * $original_width - ($new_width / 2));
-            $pos_y = intval(($mask_y / 100) * $original_height - ($new_height / 2));
-            error_log('SSPU: Positioning mask at: ' . $pos_x . ', ' . $pos_y);
-
-            $positioned_mask->compositeImage($mask, Imagick::COMPOSITE_MULTIPLY, $pos_x, $pos_y);
-            $positioned_mask->setImageType(Imagick::IMGTYPE_GRAYSCALE);
-
-            // === CREATE BACKGROUND IMAGE (with transparent cutout) ===
-            $background = clone $original;
-            $background->setImageFormat('png');
-            $background->setImageAlphaChannel(Imagick::ALPHACHANNEL_ACTIVATE);
-
-            $mask_for_cutout = clone $positioned_mask;
-            $mask_for_cutout->setImageBackgroundColor(new ImagickPixel('white'));
-            $mask_for_cutout->setImageAlphaChannel(Imagick::ALPHACHANNEL_REMOVE);
-            $mask_for_cutout->negateImage(false);
-
-            // Apply as alpha mask - DSTIN keeps the parts of the original image that overlap with the white areas of the inverted mask.
-            $background->compositeImage($mask_for_cutout, Imagick::COMPOSITE_DSTIN, 0, 0);
-            $mask_for_cutout->destroy();
-
-            // === CREATE VISUAL MASK (preview showing design area) ===
-            $visual_mask = clone $original;
-            $visual_mask->setImageFormat('png');
-
-            // Create a semi-transparent red overlay for the design area
-            $red_overlay = new Imagick();
-            $red_overlay->newImage($original_width, $original_height, new ImagickPixel('transparent'));
-            $red_overlay->setImageFormat('png');
-
-            $draw = new ImagickDraw();
-            $draw->setFillColor(new ImagickPixel('rgba(255, 0, 0, 0.3)')); // 30% red
-            $draw->rectangle($pos_x, $pos_y, $pos_x + $new_width - 1, $pos_y + $new_height - 1);
-            $red_overlay->drawImage($draw);
-
-            $visual_mask->compositeImage($red_overlay, Imagick::COMPOSITE_OVER, 0, 0);
-
-            $border_draw = new ImagickDraw();
-            $border_draw->setStrokeColor(new ImagickPixel('red'));
-            $border_draw->setStrokeWidth(3);
-            $border_draw->setFillOpacity(0);
-            $border_draw->rectangle($pos_x, $pos_y, $pos_x + $new_width - 1, $pos_y + $new_height - 1);
-            $visual_mask->drawImage($border_draw);
-
-            // Add text label
-            $text_draw = new ImagickDraw();
-            $text_draw->setFillColor(new ImagickPixel('white'));
-            $text_draw->setStrokeColor(new ImagickPixel('black'));
-            $text_draw->setStrokeWidth(1);
-            $text_draw->setFontSize(16);
-            $text_x = $pos_x < 5 ? 5 : $pos_x + 5;
-            $text_y = $pos_y < 20 ? 20 : $pos_y + 20;
-
-            try {
-                $visual_mask->annotateImage($text_draw, $text_x, $text_y, 0, 'DESIGN AREA');
-            } catch (Exception $e) {
-                error_log('SSPU: Could not add text annotation: ' . $e->getMessage());
-            }
-
-            // Save files
-            $upload_dir = wp_upload_dir();
-            $filename_base = 'design-' . $image_id . '-' . time();
-
-            $bg_filename = $filename_base . '-background.png';
-            $bg_path = $upload_dir['path'] . '/' . $bg_filename;
-            $background->writeImage($bg_path);
-            error_log('SSPU: Background saved to: ' . $bg_path);
-
-            $mask_filename = $filename_base . '-mask.png';
-            $mask_path = $upload_dir['path'] . '/' . $mask_filename;
-            $visual_mask->writeImage($mask_path);
-            error_log('SSPU: Visual mask saved to: ' . $mask_path);
-
-            // Clean up
-            $original->destroy();
-            $mask->destroy();
-            $positioned_mask->destroy();
-            $background->destroy();
-            $visual_mask->destroy();
-            $red_overlay->destroy();
-
-            // Create WordPress attachments
-            $bg_id = $this->create_attachment($bg_path, $bg_filename, 'Design Background - Transparent Area');
-            $mask_id = $this->create_attachment($mask_path, $mask_filename, 'Design Area Preview');
-
-            if (!$bg_id || !$mask_id) {
-                throw new Exception('Failed to create WordPress attachments');
-            }
-
-            error_log('SSPU: === PROCESSING COMPLETE ===');
-
-            return [
-                'success' => true,
-                'data' => [
-                    'background_url' => wp_get_attachment_url($bg_id),
-                    'mask_url' => wp_get_attachment_url($mask_id),
-                    'message' => 'Design files created successfully'
-                ]
-            ];
-
-        } catch (Exception $e) {
-            error_log('SSPU: Imagick error: ' . $e->getMessage());
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * Create masked image with custom mask using GD (fallback).
-     * UPDATED with new simplified logic.
-     */
-    private function create_masked_image_with_custom_mask_gd($original_image_path, $image_id, $custom_mask_url, $mask_adjustments)
-    {
-        try {
-            error_log('SSPU: Using GD fallback');
-
-            // Load original image
-            $original = imagecreatefromstring(file_get_contents($original_image_path));
-            if (!$original) throw new Exception('Failed to load original image');
-
-            $orig_width = imagesx($original);
-            $orig_height = imagesy($original);
-
-            // Load mask
-            $mask_data = @file_get_contents($custom_mask_url);
-            if (!$mask_data) throw new Exception('Failed to load mask image');
-            $mask = imagecreatefromstring($mask_data);
-            if (!$mask) throw new Exception('Failed to create mask image');
-
-            // Get mask dimensions and adjustments
-            $mask_width = imagesx($mask);
-            $mask_height = imagesy($mask);
-            $scale = floatval($mask_adjustments['size']) / 100;
-            $mask_x_percent = floatval($mask_adjustments['x']);
-            $mask_y_percent = floatval($mask_adjustments['y']);
-
-            // Calculate new dimensions
-            $new_width = intval($mask_width * $scale);
-            $new_height = intval($mask_height * $scale);
-
-            // Create resized mask
-            $resized_mask = imagecreatetruecolor($new_width, $new_height);
-            imagealphablending($resized_mask, false);
-            imagesavealpha($resized_mask, true);
-            $transparent_bg = imagecolorallocatealpha($resized_mask, 0, 0, 0, 127);
-            imagefill($resized_mask, 0, 0, $transparent_bg);
-            imagecopyresampled($resized_mask, $mask, 0, 0, 0, 0, $new_width, $new_height, $mask_width, $mask_height);
-
-            // Create final mask canvas
-            $mask_canvas = imagecreatetruecolor($orig_width, $orig_height);
-            $white = imagecolorallocate($mask_canvas, 255, 255, 255);
-            imagefill($mask_canvas, 0, 0, $white);
-
-            $pos_x = intval(($mask_x_percent / 100) * $orig_width - ($new_width / 2));
-            $pos_y = intval(($mask_y_percent / 100) * $orig_height - ($new_height / 2));
-
-            imagecopy($mask_canvas, $resized_mask, $pos_x, $pos_y, 0, 0, $new_width, $new_height);
-
-            // Create output with transparency
-            $output = imagecreatetruecolor($orig_width, $orig_height);
-            imagealphablending($output, false);
-            imagesavealpha($output, true);
-            $transparent_output = imagecolorallocatealpha($output, 0, 0, 0, 127);
-            imagefill($output, 0, 0, $transparent_output);
-
-            // Apply mask pixel by pixel
-            for ($x = 0; $x < $orig_width; $x++) {
-                for ($y = 0; $y < $orig_height; $y++) {
-                    $mask_color = imagecolorat($mask_canvas, $x, $y);
-                    $mask_brightness = ($mask_color >> 16) & 0xFF; // Red channel as brightness
-
-                    // If mask is black (design area), copy the original pixel
-                    if ($mask_brightness < 128) {
-                        $rgb = imagecolorat($original, $x, $y);
-                        imagesetpixel($output, $x, $y, $rgb);
-                    }
-                }
-            }
-
-            // Create visual mask
-            $visual = imagecreatetruecolor($orig_width, $orig_height);
-            imagecopy($visual, $original, 0, 0, 0, 0, $orig_width, $orig_height);
-
-            $red_transparent = imagecolorallocatealpha($visual, 255, 0, 0, 80);
-            imagefilledrectangle($visual, $pos_x, $pos_y, $pos_x + $new_width, $pos_y + $new_height, $red_transparent);
-
-            $red_solid = imagecolorallocate($visual, 255, 0, 0);
-            imagesetthickness($visual, 3);
-            imagerectangle($visual, $pos_x, $pos_y, $pos_x + $new_width - 1, $pos_y + $new_height - 1, $red_solid);
-
-            // Add text label
-            $white = imagecolorallocate($visual, 255, 255, 255);
-            $black = imagecolorallocate($visual, 0, 0, 0);
-            $text = 'DESIGN AREA';
-            $font_size = 3;
-            $text_x = $pos_x < 5 ? 5 : $pos_x + 5;
-            $text_y = $pos_y < 5 ? 5 : $pos_y + 5;
-            imagestring($visual, $font_size, $text_x + 1, $text_y + 1, $text, $black);
-            imagestring($visual, $font_size, $text_x, $text_y, $text, $white);
-
-            // Save files
-            $upload_dir = wp_upload_dir();
-            $filename_base = 'design-' . $image_id . '-' . time() . '-gd';
-
-            $bg_filename = $filename_base . '-background.png';
-            $bg_path = $upload_dir['path'] . '/' . $bg_filename;
-            imagepng($output, $bg_path);
-
-            $mask_filename = $filename_base . '-mask.png';
-            $mask_path = $upload_dir['path'] . '/' . $mask_filename;
-            imagepng($visual, $mask_path);
-
-            // Clean up
-            imagedestroy($original);
-            imagedestroy($mask);
-            imagedestroy($resized_mask);
-            imagedestroy($mask_canvas);
-            imagedestroy($output);
-            imagedestroy($visual);
-
-            $bg_id = $this->create_attachment($bg_path, $bg_filename, 'Design Background');
-            $mask_id = $this->create_attachment($mask_path, $mask_filename, 'Design Preview');
-
-            if (!$bg_id || !$mask_id) {
-                throw new Exception('Failed to create attachments');
-            }
-
-            return [
-                'success' => true,
-                'data' => [
-                    'background_url' => wp_get_attachment_url($bg_id),
-                    'mask_url' => wp_get_attachment_url($mask_id),
-                    'message' => 'Design files created successfully (GD)'
-                ]
-            ];
-
-        } catch (Exception $e) {
-            error_log('SSPU GD Error: ' . $e->getMessage());
-            return ['success' => false, 'error' => 'GD Error: ' . $e->getMessage()];
-        }
-    }
-
-    /**
      * Helper method to create WordPress attachment
      */
-    private function create_attachment($file_path, $filename, $title = '')
-    {
+    private function create_attachment($file_path, $filename, $title = '') {
         if (!file_exists($file_path)) {
             error_log('SSPU Helper: File not found for attachment creation: ' . $file_path);
             return false;
@@ -3038,6 +2617,79 @@ class SSPU_Admin_Ajax
         wp_update_attachment_metadata($attach_id, $attach_data);
 
         return $attach_id;
+    }
+
+    /**
+     * Download image from URL helper method
+     */
+    private function download_image_from_url($image_url, $filename)
+    {
+        if (!current_user_can('upload_files')) {
+            error_log('SSPU Helper: Permission denied for download_image_from_url for user ' . get_current_user_id());
+            return false;
+        }
+
+        require_once(ABSPATH . 'wp-admin/includes/media.php');
+        require_once(ABSPATH . 'wp-admin/includes/file.php');
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+
+        $tmp = download_url($image_url, 60);
+
+        if (is_wp_error($tmp)) {
+            error_log('SSPU Helper Download Error: ' . $tmp->get_error_message() . ' for URL: ' . $image_url);
+            return false;
+        }
+
+        if (!file_exists($tmp) || filesize($tmp) === 0) {
+            @unlink($tmp);
+            error_log('SSPU Helper Download Error: Downloaded file is empty or invalid for URL: ' . $image_url);
+            return false;
+        }
+
+        if (filesize($tmp) > wp_max_upload_size()) {
+            @unlink($tmp);
+            error_log('SSPU Helper Download Error: File too large (max ' . size_format(wp_max_upload_size()) . ') for URL: ' . $image_url);
+            return false;
+        }
+
+        $file_info = wp_check_filetype($tmp);
+        if (!$file_info['ext']) {
+            $url_ext = pathinfo(parse_url($image_url, PHP_URL_PATH), PATHINFO_EXTENSION);
+            if (in_array(strtolower($url_ext), ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+                $file_info['ext'] = strtolower($url_ext);
+                $file_info['type'] = 'image/' . ($file_info['ext'] === 'jpg' ? 'jpeg' : $file_info['ext']);
+            } else {
+                $file_info['ext'] = 'jpg';
+                $file_info['type'] = 'image/jpeg';
+            }
+        }
+
+        $file_array = [
+            'name' => sanitize_file_name($filename) . '.' . $file_info['ext'],
+            'tmp_name' => $tmp,
+            'type' => $file_info['type'],
+            'error' => 0,
+            'size' => filesize($tmp),
+        ];
+
+        $attachment_id = media_handle_sideload($file_array, 0, null, [
+            'post_title' => ucwords(str_replace('-', ' ', $filename)),
+            'post_content' => 'Downloaded via SSPU from external source: ' . $image_url,
+            'post_status' => 'inherit',
+        ]);
+
+        @unlink($tmp);
+
+        if (is_wp_error($attachment_id)) {
+            error_log('SSPU Helper Sideload Error: ' . $attachment_id->get_error_message() . ' for URL: ' . $image_url);
+            return false;
+        }
+
+        return [
+            'attachment_id' => $attachment_id,
+            'url' => wp_get_attachment_url($attachment_id),
+            'thumb_url' => wp_get_attachment_thumb_url($attachment_id) ?: wp_get_attachment_url($attachment_id),
+        ];
     }
 
     /**
@@ -3107,12 +2759,12 @@ class SSPU_Admin_Ajax
             }
 
             if (count($original['variants']) > count($new_data['variants'])) {
-                $new_variant_ids = array_column($new_data['variants'], 'id');
-                foreach ($original['variants'] as $orig_variant) {
-                    if (!in_array($orig_variant['id'], $new_variant_ids)) {
-                        $changes[] = 'deleted_variant_' . $orig_variant['id'];
-                    }
-                }
+                 $new_variant_ids = array_column($new_data['variants'], 'id');
+                 foreach($original['variants'] as $orig_variant){
+                     if(!in_array($orig_variant['id'], $new_variant_ids)){
+                         $changes[] = 'deleted_variant_' . $orig_variant['id'];
+                     }
+                 }
             }
         }
 
@@ -3130,53 +2782,5 @@ class SSPU_Admin_Ajax
         }
 
         return array_values(array_unique($changes));
-    }
-
-    /**
-     * Additional helper function to test if image libraries are available (Class Method)
-     */
-    private function check_image_libraries()
-    {
-        $libraries = [];
-
-        // Check for Imagick
-        if (class_exists('Imagick')) {
-            $libraries['imagick'] = true;
-            $imagick = new Imagick();
-            $libraries['imagick_version'] = $imagick->getVersion();
-        } else {
-            $libraries['imagick'] = false;
-        }
-
-        // Check for GD
-        if (extension_loaded('gd') && function_exists('gd_info')) {
-            $libraries['gd'] = true;
-            $libraries['gd_info'] = gd_info();
-        } else {
-            $libraries['gd'] = false;
-        }
-
-        return $libraries;
-    }
-
-    /**
-     * Helper function to get local file path from URL
-     */
-    private function get_local_path_from_url($url)
-    {
-        $upload_dir = wp_upload_dir();
-
-        // Check if URL is from our uploads directory
-        if (strpos($url, $upload_dir['baseurl']) !== false) {
-            return str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $url);
-        }
-
-        // Try to get attachment ID from URL
-        $attachment_id = attachment_url_to_postid($url);
-        if ($attachment_id) {
-            return get_attached_file($attachment_id);
-        }
-
-        return false;
     }
 }

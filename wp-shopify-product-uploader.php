@@ -2,7 +2,7 @@
 /**
  * Plugin Name:         Shopify Product Uploader
  * Description:         Allows staff to upload products to a Shopify store directly from the WordPress dashboard with AI-powered image editing.
- * Version:             6.2.0
+ * Version:             7.2.0
  * Author:              Your Name
  * License:             GPL-2.0-or-later
  * License URI:         https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,7 +17,7 @@ if ( ! defined( 'WPINC' ) ) {
 // Define constants for easy access to paths and URLs
 define( 'SSPU_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SSPU_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'SSPU_VERSION', '6.2.0' );
+define( 'SSPU_VERSION', '7.2.0' );
 
 // Include our class files
 require_once SSPU_PLUGIN_PATH . 'includes/class-sspu-roles.php';

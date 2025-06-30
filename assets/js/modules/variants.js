@@ -261,13 +261,11 @@
                 return;
             }
 
-            // Check if Cropper.js is loaded
             if (typeof Cropper === 'undefined') {
                 APP.utils.notify('Cropper library not loaded. Please refresh the page.', 'error');
                 return;
             }
 
-            // Create modal for mask selection with proper lightbox styling
             const modalHtml = `
                 <div id="design-mask-modal" class="sspu-lightbox-overlay" style="display:none;">
                     <div class="sspu-lightbox-content">
@@ -286,20 +284,19 @@
                 </div>
             `;
 
-            // Remove existing modal if any
             $('#design-mask-modal').remove();
             $('body').append(modalHtml);
 
-            // Get image URL
             wp.media.attachment(imageId).fetch().done(() => {
                 const imageUrl = wp.media.attachment(imageId).get('url');
                 const $modal = $('#design-mask-modal');
                 const $sourceImg = $('#mask-source-image');
+                const $confirmBtn = $('#confirm-mask');
+                const $uploadBtn = $('#upload-variant-mask');
 
                 $sourceImg.attr('src', imageUrl);
                 $modal.fadeIn();
 
-                // Initialize Cropper
                 const cropper = new Cropper($sourceImg[0], {
                     aspectRatio: NaN,
                     viewMode: 1,
@@ -315,27 +312,24 @@
                 });
 
                 // Handle Upload Custom Mask button inside the modal
-                $('#upload-variant-mask').on('click', function() {
+                $uploadBtn.on('click', function() {
                     const frame = wp.media({
                         title: 'Select Custom Mask',
-                        button: {
-                            text: 'Use this mask'
-                        },
+                        button: { text: 'Use this mask' },
                         multiple: false,
-                        library: {
-                            type: 'image'
-                        }
+                        library: { type: 'image' }
                     });
 
                     frame.on('select', function() {
                         const attachment = frame.state().get('selection').first().toJSON();
                         const maskUrl = attachment.url;
 
-                        // Show loading state
-                        $button.prop('disabled', true).text('Creating files with custom mask...');
-                        $modal.fadeOut();
+                        // ** FIX START: Disable other buttons and set loading state **
+                        $confirmBtn.prop('disabled', true);
+                        $uploadBtn.prop('disabled', true).text('Processing...');
+                        // ** FIX END **
 
-                        // Create design files with the custom mask
+                        // Use the correct AJAX action for custom masks
                         APP.utils.ajax('create_masked_image_with_custom_mask', {
                             image_id: imageId,
                             custom_mask_url: maskUrl
@@ -343,10 +337,9 @@
                             if (response.success) {
                                 $row.find('.sspu-designer-background-url').val(response.data.background_url);
                                 $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
-                                $row.find('.sspu-design-files-status').html('✓ Design files created with custom mask');
+                                $row.find('.sspu-design-files-status').html('✓ Design files created with custom mask').show();
                                 APP.utils.notify('Design files created with custom mask successfully!', 'success');
 
-                                // Enable paste button for other variants
                                 APP.state.copiedDesignMask = {
                                     background_url: response.data.background_url,
                                     mask_url: response.data.mask_url
@@ -360,20 +353,23 @@
                         }).always(() => {
                             $button.prop('disabled', false).text('Create Design Files');
                             cropper.destroy();
-                            $modal.remove();
+                            $modal.remove(); // Close modal on completion
                         });
                     });
 
                     frame.open();
                 });
 
-                // Handle confirm
-                $('#confirm-mask').on('click', function() {
+                // Handle confirm (for drawing a mask)
+                $confirmBtn.on('click', function() {
+                    // ** FIX START: Disable other buttons to prevent conflict **
+                    $uploadBtn.prop('disabled', true);
+                    $confirmBtn.prop('disabled', true).text('Creating...');
+                    // ** FIX END **
+                    
                     const cropData = cropper.getData();
 
-                    $button.prop('disabled', true).text('Creating files...');
-                    $modal.fadeOut();
-
+                    // Use the correct AJAX action for drawn masks
                     APP.utils.ajax('create_masked_image', {
                         image_id: imageId,
                         mask_coordinates: {
@@ -386,10 +382,9 @@
                         if (response.success) {
                             $row.find('.sspu-designer-background-url').val(response.data.background_url);
                             $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
-                            $row.find('.sspu-design-files-status').html('✓ Design files created');
+                            $row.find('.sspu-design-files-status').html('✓ Design files created').show();
                             APP.utils.notify('Design files created successfully!', 'success');
 
-                            // Enable paste button for other variants
                             APP.state.copiedDesignMask = {
                                 background_url: response.data.background_url,
                                 mask_url: response.data.mask_url
@@ -403,38 +398,225 @@
                     }).always(() => {
                         $button.prop('disabled', false).text('Create Design Files');
                         cropper.destroy();
-                        $modal.remove();
+                        $modal.remove(); // Close modal on completion
                     });
                 });
-
-                // Handle cancel
-                $('#cancel-mask').on('click', function() {
+                
+                // General close/cancel handler
+                const closeModal = () => {
                     cropper.destroy();
                     $modal.fadeOut(() => $modal.remove());
-                });
+                    $(document).off('keydown.sspu-lightbox');
+                };
 
-                // Handle close button
-                $('.sspu-lightbox-close').on('click', function() {
-                    cropper.destroy();
-                    $modal.fadeOut(() => $modal.remove());
-                });
+                $('#cancel-mask, .sspu-lightbox-close').on('click', closeModal);
+                $modal.on('click', e => { if (e.target === e.currentTarget) closeModal(); });
+                $(document).on('keydown.sspu-lightbox', e => { if (e.key === 'Escape') closeModal(); });
+            });
+        },
 
-                // Handle clicking outside the modal content
-                $modal.on('click', function(e) {
-                    if (e.target === this) {
-                        cropper.destroy();
-                        $modal.fadeOut(() => $modal.remove());
-                    }
-                });
+        /**
+         * Upload custom mask for a specific variant
+         * @param {jQuery} $button - The button that triggered the upload
+         */
+        uploadCustomMask: function($button) {
+            const self = this;
+            const $row = $button.closest('.sspu-variant-row');
+            const imageId = $row.find('.sspu-variant-image-id').val();
 
-                // Handle ESC key
-                $(document).on('keydown.sspu-lightbox', function(e) {
-                    if (e.key === 'Escape') {
-                        cropper.destroy();
-                        $modal.fadeOut(() => $modal.remove());
-                        $(document).off('keydown.sspu-lightbox');
-                    }
+            console.log('uploadCustomMask method called for variant');
+
+            if (!imageId) {
+                APP.utils.notify('Please select a variant image first.', 'warning');
+                return;
+            }
+
+            // Check if wp.media is available
+            if (typeof wp === 'undefined' || typeof wp.media === 'undefined') {
+                console.error('WordPress media library not loaded');
+                APP.utils.notify('Media library not available. Please refresh the page.', 'error');
+                return;
+            }
+
+            const frame = wp.media({
+                title: 'Select Custom Mask Image',
+                button: {
+                    text: 'Use this mask'
+                },
+                multiple: false,
+                library: {
+                    type: 'image'
+                }
+            });
+
+            frame.on('select', function() {
+                console.log('Custom mask selected');
+                const attachment = frame.state().get('selection').first().toJSON();
+                const maskUrl = attachment.url;
+                console.log('Selected mask URL:', maskUrl);
+
+                // Get the original image URL
+                wp.media.attachment(imageId).fetch().done(() => {
+                    const imageUrl = wp.media.attachment(imageId).get('url');
+
+                    // **THE FIX IS HERE:**
+                    // Instead of making an immediate AJAX call, this opens the preview/adjustment modal.
+                    self.showMaskPreviewModal($row, imageId, imageUrl, maskUrl);
                 });
+            });
+
+            frame.on('open', function() {
+                console.log('Media library opened for custom mask');
+            });
+
+            frame.open();
+        },
+
+        /**
+         * Show mask preview modal with adjustment controls.
+         * This function gives you the chance to adjust the mask.
+         */
+        showMaskPreviewModal: function($row, imageId, imageUrl, maskUrl) {
+            const self = this;
+
+            // Create modal HTML
+            const modalHtml = `
+                <div id="mask-preview-modal" class="sspu-lightbox-overlay" style="display:none;">
+                    <div class="sspu-lightbox-content" style="max-width: 1200px;">
+                        <span class="sspu-lightbox-close">&times;</span>
+                        <h2>Adjust Design Area</h2>
+                        <p>Position and scale the mask to define where designs will be placed. The white/light area shows where designs will appear.</p>
+                        
+                        <div style="display: flex; gap: 20px; margin-top: 20px;">
+                            <div style="flex: 1;">
+                                <div id="mask-preview-container" style="position: relative; display: inline-block; border: 2px solid #ccc;">
+                                    <img id="preview-base-image" src="${imageUrl}" style="max-width: 600px; height: auto; display: block;">
+                                    <div id="mask-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                                        <img id="preview-mask-image" src="${maskUrl}" style="position: absolute; opacity: 0.7; mix-blend-mode: screen;">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="width: 300px;">
+                                <h3>Mask Controls</h3>
+                                <div style="margin-bottom: 15px;">
+                                    <label>Size: <span id="size-value">100</span>%</label>
+                                    <input type="range" id="mask-size" min="10" max="200" value="100" style="width: 100%;">
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <label>Horizontal Position: <span id="x-value">50</span>%</label>
+                                    <input type="range" id="mask-x" min="0" max="100" value="50" style="width: 100%;">
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <label>Vertical Position: <span id="y-value">50</span>%</label>
+                                    <input type="range" id="mask-y" min="0" max="100" value="50" style="width: 100%;">
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <label>Opacity: <span id="opacity-value">70</span>%</label>
+                                    <input type="range" id="mask-opacity" min="0" max="100" value="70" style="width: 100%;">
+                                </div>
+                                <button type="button" id="reset-mask" class="button">Reset Position</button>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px; text-align: center;">
+                            <button type="button" id="apply-custom-mask" class="button button-primary">Apply Custom Mask</button>
+                            <button type="button" id="cancel-custom-mask" class="button">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            $('body').append(modalHtml);
+            const $modal = $('#mask-preview-modal');
+            const $maskImg = $('#preview-mask-image');
+
+            // Update mask transform based on controls
+            const updateMaskTransform = () => {
+                const size = $('#mask-size').val();
+                const x = $('#mask-x').val();
+                const y = $('#mask-y').val();
+                const opacity = $('#mask-opacity').val() / 100;
+                const scale = size / 100;
+                const translateX = (x - 50) + '%';
+                const translateY = (y - 50) + '%';
+                $maskImg.css({
+                    transform: `translate(-50%, -50%) translate(${translateX}, ${translateY}) scale(${scale})`,
+                    transformOrigin: 'center center',
+                    opacity: opacity,
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    maxWidth: 'none'
+                });
+                $('#size-value').text(size);
+                $('#x-value').text(Math.round(x));
+                $('#y-value').text(Math.round(y));
+                $('#opacity-value').text(opacity * 100);
+            };
+
+            // Bind control events
+            $('#mask-size, #mask-x, #mask-y, #mask-opacity').on('input', updateMaskTransform);
+            $('#reset-mask').on('click', function() {
+                $('#mask-size').val(100);
+                $('#mask-x').val(50);
+                $('#mask-y').val(50);
+                $('#mask-opacity').val(70);
+                updateMaskTransform();
+            });
+
+            // Initial position update
+            updateMaskTransform();
+
+            // Apply mask button click handler (This now triggers the final step)
+            $('#apply-custom-mask').on('click', function() {
+                const maskData = {
+                    size: $('#mask-size').val(),
+                    x: $('#mask-x').val(),
+                    y: $('#mask-y').val()
+                };
+                $modal.fadeOut(() => $modal.remove());
+                self.applyCustomMaskWithAdjustments($row, imageId, maskUrl, maskData);
+            });
+
+            const closeModal = () => $modal.fadeOut(() => $modal.remove());
+            $('#cancel-custom-mask, .sspu-lightbox-close').on('click', closeModal);
+            $modal.on('click', e => { if (e.target === e.currentTarget) closeModal(); });
+            $(document).on('keydown.maskPreview', e => { if (e.key === 'Escape') closeModal(); });
+            
+            $modal.fadeIn();
+        },
+
+        /**
+         * Apply custom mask with adjustments from the modal
+         */
+        applyCustomMaskWithAdjustments: function($row, imageId, maskUrl, maskData) {
+            const $button = $row.find('.upload-custom-mask');
+            $button.prop('disabled', true).text('Applying custom mask...');
+
+            APP.utils.ajax('create_masked_image_with_custom_mask', {
+                image_id: imageId,
+                custom_mask_url: maskUrl,
+                mask_adjustments: maskData
+            }).done(response => {
+                if (response.success) {
+                    $row.find('.sspu-designer-background-url').val(response.data.background_url);
+                    $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
+                    $row.find('.sspu-design-files-status').html('✓ Design files created').show();
+                    APP.utils.notify('Design files created with custom mask successfully!', 'success');
+
+                    APP.state.copiedDesignMask = {
+                        background_url: response.data.background_url,
+                        mask_url: response.data.mask_url
+                    };
+                    $('.paste-design-mask').prop('disabled', false);
+                } else {
+                    APP.utils.notify('Failed to create design files: ' + response.data.message, 'error');
+                }
+            }).fail(() => {
+                APP.utils.notify('Error creating design files.', 'error');
+            }).always(() => {
+                $button.prop('disabled', false).text('Upload Custom Mask');
             });
         },
 
@@ -1991,393 +2173,6 @@
             $row.find('.sspu-design-files-status').html('✓ Design files pasted');
 
             APP.utils.notify('Design files pasted successfully!', 'success');
-        },
-
-        /**
-         * Upload custom mask for a specific variant
-         * @param {jQuery} $button - The button that triggered the upload
-         */
-        uploadCustomMask: function($button) {
-            const self = this;
-            const $row = $button.closest('.sspu-variant-row');
-            const imageId = $row.find('.sspu-variant-image-id').val();
-
-            console.log('uploadCustomMask method called for variant');
-
-            if (!imageId) {
-                APP.utils.notify('Please select a variant image first.', 'warning');
-                return;
-            }
-
-            // Check if wp.media is available
-            if (typeof wp === 'undefined' || typeof wp.media === 'undefined') {
-                console.error('WordPress media library not loaded');
-                APP.utils.notify('Media library not available. Please refresh the page.', 'error');
-                return;
-            }
-
-            const frame = wp.media({
-                title: 'Select Custom Mask Image',
-                button: {
-                    text: 'Use this mask'
-                },
-                multiple: false,
-                library: {
-                    type: 'image'
-                }
-            });
-
-            frame.on('select', function() {
-                console.log('Custom mask selected');
-                const attachment = frame.state().get('selection').first().toJSON();
-                const maskUrl = attachment.url;
-                console.log('Selected mask URL:', maskUrl);
-
-                // Get the original image URL
-                wp.media.attachment(imageId).fetch().done(() => {
-                    const imageUrl = wp.media.attachment(imageId).get('url');
-
-                    // Show preview modal
-                    self.showMaskPreviewModal($row, imageId, imageUrl, maskUrl);
-                });
-            });
-
-            frame.on('open', function() {
-                console.log('Media library opened for custom mask');
-            });
-
-            frame.open();
-        },
-
-        /**
-         * Show mask preview modal with adjustment controls
-         */
-        showMaskPreviewModal: function($row, imageId, imageUrl, maskUrl) {
-            const self = this;
-
-            // Create modal HTML with improved structure
-            const modalHtml = `
-                <div id="mask-preview-modal" class="sspu-lightbox-overlay" style="display:none;">
-                    <div class="sspu-lightbox-content" style="max-width: 1200px;">
-                        <span class="sspu-lightbox-close">&times;</span>
-                        <h2>Adjust Design Area</h2>
-                        <p>Position and scale the mask to define where designs will be placed. The black area shows where designs will appear.</p>
-                        
-                        <div style="display: flex; gap: 20px; margin-top: 20px;">
-                            <div style="flex: 1;">
-                                <div id="mask-preview-container" style="position: relative; display: inline-block; border: 2px solid #ccc; overflow: hidden; background: #f0f0f0;">
-                                    <img id="preview-base-image" src="${imageUrl}" style="max-width: 600px; height: auto; display: block;">
-                                    <div id="mask-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
-                                        <img id="preview-mask-image" src="${maskUrl}" style="position: absolute; opacity: 0.7;">
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div style="width: 300px;">
-                                <h3>Mask Controls</h3>
-                                
-                                <div style="margin-bottom: 15px;">
-                                    <label>Size: <span id="size-value">100</span>%</label>
-                                    <input type="range" id="mask-size" min="10" max="200" value="100" style="width: 100%;">
-                                </div>
-                                
-                                <div style="margin-bottom: 15px;">
-                                    <label>Horizontal Position: <span id="x-value">50</span>%</label>
-                                    <input type="range" id="mask-x" min="0" max="100" value="50" style="width: 100%;">
-                                </div>
-                                
-                                <div style="margin-bottom: 15px;">
-                                    <label>Vertical Position: <span id="y-value">50</span>%</label>
-                                    <input type="range" id="mask-y" min="0" max="100" value="50" style="width: 100%;">
-                                </div>
-                                
-                                <div style="margin-bottom: 15px;">
-                                    <label>
-                                        <input type="checkbox" id="maintain-aspect" checked> Maintain aspect ratio
-                                    </label>
-                                </div>
-                                
-                                <div style="margin-bottom: 15px;">
-                                    <label>Opacity: <span id="opacity-value">70</span>%</label>
-                                    <input type="range" id="mask-opacity" min="0" max="100" value="70" style="width: 100%;">
-                                </div>
-                                
-                                <button type="button" id="reset-mask" class="button">Reset Position</button>
-                                
-                                <hr style="margin: 20px 0;">
-                                
-                                <div style="background: #f0f0f0; padding: 10px; border-radius: 4px;">
-                                    <strong>Preview Info:</strong><br>
-                                    <small>• Black areas = Design placement area<br>
-                                    • White areas = Will remain visible<br>
-                                    • Adjust controls to position mask</small>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div style="margin-top: 20px; text-align: center;">
-                            <button type="button" id="apply-custom-mask" class="button button-primary">Apply Custom Mask</button>
-                            <button type="button" id="cancel-custom-mask" class="button">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            // Remove existing modal if any
-            $('#mask-preview-modal').remove();
-            $('body').append(modalHtml);
-
-            const $modal = $('#mask-preview-modal');
-            const $maskImg = $('#preview-mask-image');
-            const $baseImg = $('#preview-base-image');
-            const $maskOverlay = $('#mask-overlay');
-
-            // Show modal
-            $modal.fadeIn();
-
-            // Wait for images to load before initializing controls
-            let imagesLoaded = 0;
-            const checkImagesLoaded = () => {
-                imagesLoaded++;
-                if (imagesLoaded === 2) {
-                    // Force initial position to center
-                    $('#mask-x').val(50);
-                    $('#mask-y').val(50);
-                    $('#mask-size').val(100);
-                    $('#mask-opacity').val(70);
-                    initializeMaskControls();
-                }
-            };
-
-            // Use load event with error handling
-            $baseImg.on('load', checkImagesLoaded).on('error', function() {
-                console.error('Failed to load base image');
-                APP.utils.notify('Failed to load product image', 'error');
-                $modal.fadeOut(() => $modal.remove());
-            });
-
-            $maskImg.on('load', checkImagesLoaded).on('error', function() {
-                console.error('Failed to load mask image');
-                APP.utils.notify('Failed to load mask image', 'error');
-                $modal.fadeOut(() => $modal.remove());
-            });
-
-            // Initialize controls after images load
-            const initializeMaskControls = () => {
-                console.log('Initializing mask controls');
-
-                const containerWidth = $('#mask-preview-container').width();
-                const containerHeight = $('#mask-preview-container').height();
-
-                console.log('Container dimensions:', containerWidth, 'x', containerHeight);
-
-                // Set initial mask dimensions to match container
-                $maskOverlay.css({
-                    width: containerWidth + 'px',
-                    height: containerHeight + 'px'
-                });
-
-                // Initialize mask with centered position
-                updateMaskTransform();
-
-                // Make mask draggable
-                let isDragging = false;
-                let dragStartX, dragStartY;
-                let maskStartLeft, maskStartTop;
-
-                // Enable pointer events for dragging
-                $maskOverlay.css('pointer-events', 'auto');
-                $maskImg.css({
-                    cursor: 'move',
-                    pointerEvents: 'auto'
-                });
-
-                // Mouse drag functionality
-                $maskImg.on('mousedown', function(e) {
-                    isDragging = true;
-                    e.preventDefault();
-
-                    const offset = $maskImg.offset();
-                    const containerOffset = $('#mask-preview-container').offset();
-
-                    dragStartX = e.pageX;
-                    dragStartY = e.pageY;
-
-                    maskStartLeft = offset.left - containerOffset.left;
-                    maskStartTop = offset.top - containerOffset.top;
-                });
-
-                $(document).on('mousemove.maskDrag', function(e) {
-                    if (!isDragging) return;
-
-                    const deltaX = e.pageX - dragStartX;
-                    const deltaY = e.pageY - dragStartY;
-
-                    const newLeft = maskStartLeft + deltaX;
-                    const newTop = maskStartTop + deltaY;
-
-                    // Get current scale
-                    const scale = $('#mask-size').val() / 100;
-                    const maskWidth = $maskImg.width() * scale;
-                    const maskHeight = $maskImg.height() * scale;
-
-                    // Convert to percentage
-                    const containerWidth = $('#mask-preview-container').width();
-                    const containerHeight = $('#mask-preview-container').height();
-
-                    const percentX = (newLeft / (containerWidth - maskWidth)) * 100;
-                    const percentY = (newTop / (containerHeight - maskHeight)) * 100;
-
-                    // Update sliders
-                    $('#mask-x').val(Math.max(0, Math.min(100, percentX)));
-                    $('#mask-y').val(Math.max(0, Math.min(100, percentY)));
-
-                    updateMaskTransform();
-                });
-
-                $(document).on('mouseup.maskDrag', function() {
-                    isDragging = false;
-                });
-            };
-
-            // Update mask transform based on controls
-            const updateMaskTransform = () => {
-                const size = $('#mask-size').val();
-                const x = $('#mask-x').val();
-                const y = $('#mask-y').val();
-                const opacity = $('#mask-opacity').val() / 100;
-
-                const scale = size / 100;
-
-                // Get actual mask dimensions
-                const maskWidth = $maskImg.width() * scale;
-                const maskHeight = $maskImg.height() * scale;
-
-                // Get container dimensions
-                const containerWidth = $('#mask-preview-container').width();
-                const containerHeight = $('#mask-preview-container').height();
-
-                // Calculate position as percentage of container
-                // x and y are 0-100, representing position within container
-                const leftPos = (x / 100) * (containerWidth - maskWidth);
-                const topPos = (y / 100) * (containerHeight - maskHeight);
-
-                $maskImg.css({
-                    transform: `scale(${scale})`,
-                    transformOrigin: 'top left',
-                    opacity: opacity,
-                    position: 'absolute',
-                    top: topPos + 'px',
-                    left: leftPos + 'px',
-                    width: 'auto',
-                    height: 'auto',
-                    maxWidth: 'none',
-                    margin: 0
-                });
-
-                // Update value displays
-                $('#size-value').text(size);
-                $('#x-value').text(Math.round(x));
-                $('#y-value').text(Math.round(y));
-                $('#opacity-value').text(Math.round(opacity * 100));
-            };
-
-            // Bind control events
-            $('#mask-size, #mask-x, #mask-y, #mask-opacity').on('input', updateMaskTransform);
-
-            $('#reset-mask').on('click', function() {
-                $('#mask-size').val(100);
-                $('#mask-x').val(50);
-                $('#mask-y').val(50);
-                $('#mask-opacity').val(70);
-                updateMaskTransform();
-            });
-
-            // Apply mask button
-            $('#apply-custom-mask').on('click', function() {
-                const maskData = {
-                    size: $('#mask-size').val(),
-                    x: $('#mask-x').val(),
-                    y: $('#mask-y').val()
-                };
-
-                console.log('Applying custom mask with data:', maskData);
-
-                // Clean up event handlers
-                $(document).off('mousemove.maskDrag mouseup.maskDrag');
-
-                // Close modal
-                $modal.fadeOut(() => $modal.remove());
-
-                // Apply the mask with the adjustment data
-                self.applyCustomMaskWithAdjustments($row, imageId, maskUrl, maskData);
-            });
-
-            // Cancel button
-            $('#cancel-custom-mask').on('click', function() {
-                $(document).off('mousemove.maskDrag mouseup.maskDrag');
-                $modal.fadeOut(() => $modal.remove());
-            });
-
-            // Close button
-            $('.sspu-lightbox-close').on('click', function() {
-                $(document).off('mousemove.maskDrag mouseup.maskDrag');
-                $modal.fadeOut(() => $modal.remove());
-            });
-
-            // ESC key
-            $(document).on('keydown.maskPreview', function(e) {
-                if (e.key === 'Escape') {
-                    $(document).off('mousemove.maskDrag mouseup.maskDrag keydown.maskPreview');
-                    $modal.fadeOut(() => $modal.remove());
-                }
-            });
-        },
-
-        /**
-         * Apply custom mask with adjustments
-         */
-        applyCustomMaskWithAdjustments: function($row, imageId, maskUrl, maskData) {
-            const $button = $row.find('.upload-custom-mask');
-
-            // Show loading state
-            $button.prop('disabled', true).text('Applying custom mask...');
-
-            console.log('Sending custom mask request:', {
-                image_id: imageId,
-                custom_mask_url: maskUrl,
-                mask_adjustments: maskData
-            });
-
-            // Create design files with the custom mask and adjustments
-            APP.utils.ajax('create_masked_image_with_custom_mask', {
-                image_id: imageId,
-                custom_mask_url: maskUrl,
-                mask_adjustments: maskData
-            }).done(response => {
-                console.log('Custom mask response:', response);
-
-                if (response.success) {
-                    $row.find('.sspu-designer-background-url').val(response.data.background_url);
-                    $row.find('.sspu-designer-mask-url').val(response.data.mask_url);
-                    $row.find('.sspu-design-files-status').html('✓ Design files created with custom mask');
-                    APP.utils.notify('Design files created with custom mask successfully!', 'success');
-
-                    // Enable paste button for other variants
-                    APP.state.copiedDesignMask = {
-                        background_url: response.data.background_url,
-                        mask_url: response.data.mask_url
-                    };
-                    $('.paste-design-mask').prop('disabled', false);
-                } else {
-                    APP.utils.notify('Failed to create design files: ' + (response.data.message || 'Unknown error'), 'error');
-                }
-            }).fail((xhr) => {
-                console.error('AJAX error:', xhr);
-                APP.utils.notify('Error creating design files. Please check the console.', 'error');
-            }).always(() => {
-                $button.prop('disabled', false).text('Upload Custom Mask');
-            });
         }
     };
 
